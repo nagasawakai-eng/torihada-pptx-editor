@@ -806,7 +806,49 @@ app.post('/api/voicevox/audio', async (req, res) => {
   }
 });
 
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
+const os = require('os');
+
+// ─── PDF ダウンロード ───
+app.get('/download-pdf', (req, res) => {
+  // LibreOffice のパスを OS で切り替え
+  const soffice = process.platform === 'win32'
+    ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
+    : 'soffice';
+
+  const outDir = os.tmpdir();
+  const pptxName = path.basename(PPTX_PATH);
+  const pdfName  = pptxName.replace(/\.pptx$/i, '.pdf');
+  const pdfPath  = path.join(outDir, pdfName);
+
+  // 既存の古いPDFを削除
+  if (fs.existsSync(pdfPath)) {
+    try { fs.unlinkSync(pdfPath); } catch(e) {}
+  }
+
+  execFile(soffice, [
+    '--headless',
+    '--convert-to', 'pdf',
+    '--outdir', outDir,
+    PPTX_PATH
+  ], { timeout: 60000 }, (err) => {
+    if (err) {
+      console.error('PDF変換エラー:', err);
+      return res.status(500).json({ error: 'PDF変換に失敗しました: ' + err.message });
+    }
+    if (!fs.existsSync(pdfPath)) {
+      return res.status(500).json({ error: 'PDFファイルが生成されませんでした' });
+    }
+    const downloadName = encodeURIComponent(pdfName);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${downloadName}`);
+    const stream = fs.createReadStream(pdfPath);
+    stream.pipe(res);
+    stream.on('close', () => {
+      try { fs.unlinkSync(pdfPath); } catch(e) {}
+    });
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 const NGROK_PATH = 'C:\\Users\\長澤開\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Ngrok.Ngrok_Microsoft.Winget.Source_8wekyb3d8bbwe\\ngrok.exe';
