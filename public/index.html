@@ -1,0 +1,1923 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TORIHADA 研修資料 テキストエディター</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+  background: #f0f2f5;
+  color: #1a1a2e;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ====== ヘッダー ====== */
+header {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: white;
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  z-index: 100;
+}
+
+.header-left { display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
+.header-sub { font-size: 11px; color: #718096; }
+
+.header-right { display: flex; gap: 8px; align-items: center; }
+
+.change-badge {
+  background: #e94560;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 20px;
+  display: none;
+}
+.change-badge.visible { display: block; }
+
+.btn {
+  padding: 7px 16px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.btn-save { background: #e94560; color: white; }
+.btn-save:hover { background: #c73652; }
+.btn-save:disabled { background: #555; cursor: not-allowed; }
+.btn-restore { background: transparent; color: #a0aec0; border: 1px solid #4a5568; }
+.btn-restore:hover { color: white; border-color: white; }
+
+.save-status {
+  font-size: 12px; padding: 5px 12px; border-radius: 6px; display: none;
+}
+.save-status.success { background: #1a4731; color: #68d391; display: block; }
+.save-status.error   { background: #4a1a1a; color: #fc8181; display: block; }
+
+/* ====== メインレイアウト（3カラム） ====== */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ====== サイドバー ====== */
+.sidebar {
+  width: 200px;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding: 12px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #718096;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f7fafc;
+  flex-shrink: 0;
+}
+
+.slide-list { overflow-y: auto; flex: 1; }
+
+.slide-thumb {
+  padding: 9px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f5f5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+  position: relative;
+}
+.slide-thumb:hover { background: #f7fafc; }
+.slide-thumb.active {
+  background: #fef2f5;
+  border-left: 3px solid #e94560;
+  padding-left: 9px;
+}
+
+.slide-num {
+  width: 24px; height: 24px;
+  background: #edf2f7;
+  border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: #4a5568;
+  flex-shrink: 0;
+}
+.slide-thumb.active .slide-num { background: #e94560; color: white; }
+
+.slide-info { flex: 1; overflow: hidden; }
+.slide-title-preview {
+  font-size: 11px; color: #4a5568; line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.slide-change-count {
+  font-size: 10px; font-weight: 700;
+  background: #e94560; color: white;
+  padding: 2px 6px; border-radius: 10px;
+  display: none; flex-shrink: 0;
+}
+.slide-thumb.modified .slide-change-count { display: block; }
+
+/* ====== 中央パネル（タブ切り替え） ====== */
+.center-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f0f2f5;
+}
+
+.tab-bar {
+  display: flex;
+  background: white;
+  border-bottom: 2px solid #e2e8f0;
+  flex-shrink: 0;
+  padding: 0 20px;
+}
+
+.tab-btn {
+  padding: 12px 18px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #718096;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-family: inherit;
+  transition: all 0.2s;
+  display: flex; align-items: center; gap: 6px;
+}
+.tab-btn:hover { color: #1a1a2e; }
+.tab-btn.active { color: #e94560; border-bottom-color: #e94560; }
+
+.tab-count {
+  background: #e94560; color: white;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 10px;
+  display: none;
+}
+.tab-count.visible { display: inline-block; }
+
+.tab-content { display: none; flex: 1; overflow-y: auto; padding: 24px; }
+.tab-content.active { display: block; }
+
+/* ====== 編集タブ ====== */
+.slide-editor-card {
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  overflow: hidden;
+  max-width: 780px;
+}
+
+.slide-editor-header {
+  background: #1a1a2e;
+  color: white;
+  padding: 14px 20px;
+  display: flex; align-items: center; gap: 10px;
+}
+.slide-badge {
+  background: #e94560; color: white;
+  font-size: 11px; font-weight: 700;
+  padding: 3px 10px; border-radius: 20px;
+}
+.slide-editor-title { font-size: 14px; font-weight: 600; }
+
+.shapes-list { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+.shape-card {
+  border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+.shape-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.07); }
+
+.shape-header {
+  background: #f7fafc; padding: 8px 14px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.shape-type-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.badge-title { background: #fef3c7; color: #92400e; }
+.badge-body  { background: #dbeafe; color: #1e40af; }
+.shape-name  { font-size: 11px; color: #718096; }
+
+.paragraphs-list { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+
+.para-row { display: flex; flex-direction: column; gap: 3px; }
+.para-label { font-size: 10px; color: #a0aec0; font-weight: 600; }
+
+.run-wrap { display: flex; flex-direction: column; gap: 2px; }
+.run-label { font-size: 10px; color: #cbd5e0; }
+
+textarea.run-input {
+  width: 100%; padding: 8px 10px;
+  border: 1.5px solid #e2e8f0; border-radius: 7px;
+  font-size: 14px; font-family: inherit;
+  resize: vertical; min-height: 38px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  line-height: 1.5; background: #fafafa;
+}
+textarea.run-input:focus {
+  outline: none; border-color: #e94560;
+  box-shadow: 0 0 0 3px rgba(233,69,96,0.1);
+  background: white;
+}
+textarea.run-input.changed {
+  border-color: #f6ad55; background: #fffbf0;
+}
+
+.slide-nav {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 20px; border-top: 1px solid #f0f0f0; background: #f7fafc;
+}
+.btn-nav {
+  background: white; border: 1px solid #e2e8f0; color: #4a5568;
+  padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  font-size: 12px; font-family: inherit; transition: all 0.2s;
+}
+.btn-nav:hover { background: #e94560; color: white; border-color: #e94560; }
+.btn-nav:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-nav:disabled:hover { background: white; color: #4a5568; border-color: #e2e8f0; }
+.page-info { font-size: 12px; color: #718096; font-weight: 600; }
+
+/* ====== 変更一覧タブ ====== */
+.changes-empty {
+  text-align: center; padding: 60px 20px; color: #a0aec0;
+}
+.changes-empty .icon { font-size: 48px; margin-bottom: 12px; }
+
+.change-group {
+  background: white; border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  overflow: hidden; margin-bottom: 16px; max-width: 780px;
+}
+
+.change-group-header {
+  background: #1a1a2e; color: white;
+  padding: 12px 18px; display: flex; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none;
+}
+.change-group-header:hover { background: #2d3748; }
+
+.change-slide-badge {
+  background: #e94560; color: white;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 10px;
+}
+.change-group-title { font-size: 13px; font-weight: 600; flex: 1; }
+.change-count-badge {
+  background: rgba(255,255,255,0.15); color: white;
+  font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 10px;
+}
+.change-arrow { font-size: 12px; color: #a0aec0; }
+
+.change-items { padding: 0; }
+.change-item {
+  padding: 14px 18px;
+  border-bottom: 1px solid #f5f5f5;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.change-item:last-child { border-bottom: none; }
+
+.change-field-label {
+  font-size: 11px; color: #718096; font-weight: 600;
+}
+
+.diff-row { display: flex; gap: 8px; align-items: flex-start; }
+
+.diff-box {
+  flex: 1; padding: 8px 12px; border-radius: 7px;
+  font-size: 13px; line-height: 1.5; word-break: break-all;
+}
+.diff-before {
+  background: #fff5f5; border: 1px solid #fed7d7; color: #9b2335;
+  text-decoration: line-through; opacity: 0.8;
+}
+.diff-after {
+  background: #f0fff4; border: 1px solid #9ae6b4; color: #276749;
+  font-weight: 600;
+}
+.diff-arrow {
+  color: #a0aec0; font-size: 18px; padding-top: 6px; flex-shrink: 0;
+}
+
+.jump-btn {
+  align-self: flex-end;
+  background: transparent; border: 1px solid #e2e8f0;
+  color: #718096; padding: 4px 12px; border-radius: 6px;
+  font-size: 11px; cursor: pointer; font-family: inherit;
+  transition: all 0.2s;
+}
+.jump-btn:hover { background: #e94560; color: white; border-color: #e94560; }
+
+/* ====== リサイズハンドル ====== */
+.resize-handle {
+  width: 6px;
+  background: #e2e8f0;
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  position: relative;
+  z-index: 10;
+}
+.resize-handle:hover, .resize-handle.dragging {
+  background: #e94560;
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 40px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 2px;
+}
+
+/* ====== 右パネル（プレビュー） ====== */
+.preview-panel {
+  width: 340px;
+  min-width: 180px;
+  max-width: 700px;
+  background: white;
+  border-left: none;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.preview-header {
+  padding: 8px 12px;
+  font-size: 11px; font-weight: 700; color: #718096;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f7fafc; flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px;
+}
+.preview-header-left { display: flex; align-items: center; gap: 6px; flex: 1; }
+.preview-slide-num {
+  background: #e94560; color: white;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 10px;
+}
+
+/* ズームコントロール */
+.zoom-controls {
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+}
+.zoom-btn {
+  width: 24px; height: 24px;
+  border: 1px solid #e2e8f0; background: white;
+  border-radius: 5px; cursor: pointer;
+  font-size: 14px; font-weight: 700; color: #4a5568;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; line-height: 1; padding: 0;
+}
+.zoom-btn:hover { background: #e94560; color: white; border-color: #e94560; }
+.zoom-label {
+  font-size: 10px; color: #718096; font-weight: 700;
+  min-width: 34px; text-align: center;
+}
+.zoom-reset {
+  font-size: 9px; padding: 0 5px; height: 20px; border-radius: 4px;
+  border: 1px solid #e2e8f0; background: white; cursor: pointer;
+  color: #718096; font-family: inherit; transition: all 0.15s;
+}
+.zoom-reset:hover { background: #718096; color: white; border-color: #718096; }
+
+.preview-img-wrap {
+  flex: 1; padding: 12px;
+  display: flex; align-items: flex-start; justify-content: center;
+  overflow: auto; background: #f0f2f5;
+}
+
+.preview-img-wrap img {
+  border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  display: block;
+  transition: width 0.1s ease;
+}
+
+.preview-no-img {
+  color: #a0aec0; font-size: 12px; text-align: center; padding: 40px 20px;
+}
+
+.preview-note {
+  padding: 8px 12px; font-size: 10px; color: #a0aec0;
+  border-top: 1px solid #e2e8f0; background: white;
+  text-align: center; flex-shrink: 0;
+}
+
+/* ====== 動画レビューモード オーバーレイ ====== */
+#videoReviewOverlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 1000;
+  background: #0d0d0d;
+  flex-direction: column;
+}
+#videoReviewOverlay.open { display: flex; }
+
+.vr-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px;
+  background: #1a1a2e;
+  flex-shrink: 0;
+}
+.vr-title { color: white; font-size: 14px; font-weight: 700; }
+.vr-slide-info { color: #a0aec0; font-size: 13px; }
+.vr-close {
+  background: #e94560; color: white; border: none;
+  padding: 6px 16px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-weight: 600; font-family: inherit;
+}
+.vr-close:hover { background: #c73652; }
+
+.vr-body {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; position: relative;
+}
+
+.vr-slide-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 16px 20px 8px;
+  overflow: hidden;
+}
+.vr-slide-area img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+
+.vr-script-area {
+  background: #1a1a2e;
+  padding: 12px 24px;
+  min-height: 72px;
+  max-height: 110px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.vr-script-text {
+  color: #e2e8f0; font-size: 14px; line-height: 1.7;
+  white-space: pre-wrap;
+}
+.vr-script-text .spoken { color: #f6ad55; }
+
+.vr-controls {
+  background: #111827;
+  padding: 12px 24px;
+  display: flex; flex-direction: column; gap: 10px;
+  flex-shrink: 0;
+}
+
+.vr-progress-wrap {
+  display: flex; align-items: center; gap: 10px;
+}
+.vr-progress-bar {
+  flex: 1; height: 4px; background: #374151; border-radius: 2px;
+  cursor: pointer; position: relative;
+}
+.vr-progress-fill {
+  height: 100%; background: #e94560; border-radius: 2px;
+  transition: width 0.3s;
+}
+.vr-time { font-size: 12px; color: #9ca3af; min-width: 60px; text-align: right; }
+
+.vr-btn-row {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+}
+.vr-btn {
+  background: #374151; color: white; border: none;
+  border-radius: 8px; cursor: pointer; font-family: inherit;
+  font-size: 18px; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.vr-btn:hover { background: #4b5563; }
+.vr-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.vr-btn:disabled:hover { background: #374151; }
+
+.vr-btn-sm { width: 36px; height: 36px; font-size: 14px; }
+.vr-btn-md { width: 44px; height: 44px; font-size: 20px; }
+.vr-btn-lg { width: 56px; height: 56px; font-size: 26px; background: #e94560; border-radius: 50%; }
+.vr-btn-lg:hover { background: #c73652; }
+
+.vr-speed-group {
+  display: flex; align-items: center; gap: 6px;
+  margin-left: auto;
+}
+.vr-speed-label { color: #9ca3af; font-size: 12px; }
+.vr-speed-btn {
+  background: #374151; color: #d1d5db; border: none;
+  padding: 3px 9px; border-radius: 5px; cursor: pointer;
+  font-size: 12px; font-family: inherit; transition: all 0.15s;
+}
+.vr-speed-btn:hover, .vr-speed-btn.active { background: #e94560; color: white; }
+
+.vr-script-edit-btn {
+  background: transparent; border: 1px solid #4b5563;
+  color: #9ca3af; padding: 3px 10px; border-radius: 5px;
+  font-size: 11px; cursor: pointer; font-family: inherit;
+  transition: all 0.15s; margin-left: 8px;
+}
+.vr-script-edit-btn:hover { border-color: #e94560; color: #e94560; }
+
+.vr-speaker-row {
+  display: flex; align-items: center; gap: 8px;
+  justify-content: center;
+}
+.vr-speaker-label { color: #9ca3af; font-size: 12px; white-space: nowrap; }
+.vr-speaker-select {
+  background: #374151; color: #e2e8f0; border: 1px solid #4b5563;
+  border-radius: 5px; padding: 3px 8px; font-size: 12px;
+  font-family: inherit; cursor: pointer; min-width: 180px;
+}
+.vr-speaker-select:focus { outline: none; border-color: #e94560; }
+.vr-loading-text { color: #f6ad55; font-size: 13px; font-style: italic; }
+.vr-intonation-group {
+  display: flex; align-items: center; gap: 6px;
+}
+.vr-intonation-btn {
+  background: #374151; color: #d1d5db; border: none;
+  padding: 3px 10px; border-radius: 5px; cursor: pointer;
+  font-size: 12px; font-family: inherit; transition: all 0.15s;
+}
+.vr-intonation-btn:hover, .vr-intonation-btn.active { background: #7c3aed; color: white; }
+.vr-audio-bar {
+  height: 2px; background: #e94560; border-radius: 1px;
+  transition: width 0.1s linear;
+  position: absolute; bottom: 0; left: 0;
+}
+
+/* ====== レイアウトエディター（PowerPoint風） ====== */
+.slide-img-container {
+  position: relative;
+  display: block;
+  line-height: 0;
+}
+.layout-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  border-radius: 8px;
+}
+.layout-overlay.active { pointer-events: all; }
+
+/* 要素枠：触るまで透明 */
+.edit-el {
+  position: absolute;
+  border: 1.5px solid transparent;
+  background: transparent;
+  cursor: move;
+  box-sizing: border-box;
+  user-select: none;
+  transition: border-color 0.08s;
+}
+.edit-el:hover { border-color: rgba(0,120,215,0.55); }
+.edit-el.selected {
+  border: 1.5px solid #0078D7 !important;
+  background: rgba(0,120,215,0.04) !important;
+  z-index: 20;
+}
+
+/* 8点リサイズハンドル（選択時のみ表示） */
+.rh {
+  position: absolute;
+  width: 8px; height: 8px;
+  background: white;
+  border: 1.5px solid #0078D7;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  display: none;
+  z-index: 21;
+  box-sizing: border-box;
+}
+.edit-el.selected .rh { display: block; }
+.rh-nw { top:-4px; left:-4px; cursor:nw-resize; }
+.rh-n  { top:-4px; left:calc(50% - 4px); cursor:n-resize; }
+.rh-ne { top:-4px; right:-4px; cursor:ne-resize; }
+.rh-e  { top:calc(50% - 4px); right:-4px; cursor:e-resize; }
+.rh-se { bottom:-4px; right:-4px; cursor:se-resize; }
+.rh-s  { bottom:-4px; left:calc(50% - 4px); cursor:s-resize; }
+.rh-sw { bottom:-4px; left:-4px; cursor:sw-resize; }
+.rh-w  { top:calc(50% - 4px); left:-4px; cursor:w-resize; }
+
+/* 選択中の位置・サイズ情報バー */
+#layoutInfoBar {
+  font-size: 11px; color: #9ca3af; padding: 3px 12px;
+  font-family: monospace; letter-spacing: 0.03em;
+  min-height: 18px; display: none;
+}
+
+.layout-edit-btn {
+  background: #374151; color: #d1d5db; border: none;
+  padding: 4px 11px; border-radius: 5px; cursor: pointer;
+  font-size: 11px; font-family: inherit; transition: all 0.15s;
+  margin-left: 8px; white-space: nowrap;
+}
+.layout-edit-btn:hover { background: #0078D7; color: white; }
+.layout-edit-btn.active { background: #0078D7; color: white; }
+.layout-save-btn {
+  background: #059669; color: white; border: none;
+  padding: 4px 11px; border-radius: 5px; cursor: pointer;
+  font-size: 11px; font-family: inherit; transition: all 0.15s;
+  margin-left: 4px; white-space: nowrap;
+}
+.layout-save-btn:hover:not(:disabled) { background: #047857; }
+.layout-save-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* ====== ローディング ====== */
+.loading {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 300px; gap: 14px; color: #718096;
+}
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid #e2e8f0; border-top-color: #e94560;
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- 動画レビュー オーバーレイ -->
+<div id="videoReviewOverlay">
+  <div class="vr-header">
+    <span class="vr-title">🎬 動画レビュー</span>
+    <span class="vr-slide-info" id="vrSlideInfo">Slide 1 / 23</span>
+    <button class="vr-close" onclick="closeVideoReview()">✕ 閉じる</button>
+  </div>
+  <div class="vr-body">
+    <div class="vr-slide-area">
+      <img id="vrSlideImg" src="" alt="slide">
+    </div>
+    <div class="vr-script-area">
+      <div class="vr-script-text" id="vrScriptText">—</div>
+    </div>
+    <div class="vr-controls">
+      <div class="vr-progress-wrap">
+        <div class="vr-progress-bar" id="vrProgressBar" onclick="vrSeekClick(event)">
+          <div class="vr-progress-fill" id="vrProgressFill" style="width:0%"></div>
+        </div>
+        <span class="vr-time" id="vrTime">0 / 23</span>
+      </div>
+      <div class="vr-btn-row">
+        <button class="vr-btn vr-btn-sm" onclick="vrGotoSlide(0)" title="最初へ">⏮</button>
+        <button class="vr-btn vr-btn-md" id="vrPrevBtn" onclick="vrPrev()" title="前のスライド">⏪</button>
+        <button class="vr-btn vr-btn-lg" id="vrPlayBtn" onclick="vrTogglePlay()" title="再生/一時停止">▶</button>
+        <button class="vr-btn vr-btn-md" id="vrNextBtn" onclick="vrNext()" title="次のスライド">⏩</button>
+        <button class="vr-btn vr-btn-sm" onclick="vrGotoSlide(vrState.total-1)" title="最後へ">⏭</button>
+        <div class="vr-speed-group">
+          <span class="vr-speed-label">速度</span>
+          <button class="vr-speed-btn" onclick="vrSetSpeed(0.80)">遅め</button>
+          <button class="vr-speed-btn active" onclick="vrSetSpeed(0.93)">自然</button>
+          <button class="vr-speed-btn" onclick="vrSetSpeed(1.00)">標準</button>
+          <button class="vr-speed-btn" onclick="vrSetSpeed(1.15)">速め</button>
+          <button class="vr-script-edit-btn" onclick="vrEditScript()" title="このスライドの原稿を編集">✏️ 原稿編集</button>
+        </div>
+      </div>
+      <div class="vr-speaker-row">
+        <span class="vr-speaker-label">🎤 話者</span>
+        <select id="vrSpeakerSelect" class="vr-speaker-select" onchange="vrSetSpeaker(this.value)">
+          <option value="8">春日部つむぎ（ノーマル）</option>
+        </select>
+        <div class="vr-intonation-group" style="margin-left:16px;">
+          <span class="vr-speed-label">抑揚</span>
+          <button class="vr-intonation-btn" onclick="vrSetIntonation(0.8)">フラット</button>
+          <button class="vr-intonation-btn" onclick="vrSetIntonation(1.2)">自然</button>
+          <button class="vr-intonation-btn active" onclick="vrSetIntonation(1.5)">豊か</button>
+          <button class="vr-intonation-btn" onclick="vrSetIntonation(2.0)">強調</button>
+        </div>
+        <div class="vr-intonation-group" style="margin-left:16px;">
+          <span class="vr-speed-label">間</span>
+          <button class="vr-intonation-btn" onclick="vrSetPause(0.8)">短め</button>
+          <button class="vr-intonation-btn" onclick="vrSetPause(1.0)">標準</button>
+          <button class="vr-intonation-btn active" onclick="vrSetPause(1.3)">自然</button>
+          <button class="vr-intonation-btn" onclick="vrSetPause(1.6)">ゆっくり</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ヘッダー -->
+<header>
+  <div class="header-left">
+    <div>
+      <h1>TORIHADA 研修資料 テキストエディター</h1>
+      <div class="header-sub">第1週_研修資料_完全版.pptx</div>
+    </div>
+    <span class="change-badge" id="headerChangeBadge"></span>
+  </div>
+  <div class="header-right">
+    <span class="save-status" id="saveStatus"></span>
+    <button class="btn" style="background:#7c3aed;color:white;" onclick="openVideoReview()">🎬 動画レビュー</button>
+    <button class="btn" style="background:#2b6cb0;color:white;position:relative;" onclick="openChangelog()">📋 変更履歴 <span id="changelogBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#e53e3e;color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;"></span></button>
+    <button class="btn btn-restore" onclick="restoreBackup()">元に戻す</button>
+    <button class="btn btn-save" id="saveBtn" onclick="saveAll()">💾 保存する</button>
+  </div>
+
+  <!-- 変更履歴モーダル -->
+  <div id="changelogModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:16px;width:680px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2 style="font-size:18px;font-weight:700;color:#1a202c;">📋 変更履歴</h2>
+          <p style="font-size:12px;color:#718096;margin-top:2px;">資料への変更内容の記録</p>
+        </div>
+        <button onclick="closeChangelog()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#718096;">✕</button>
+      </div>
+      <!-- 新規追加フォーム -->
+      <div style="padding:16px 24px;background:#f7f8fa;border-bottom:1px solid #e2e8f0;">
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+          <div>
+            <label style="font-size:11px;color:#4a5568;font-weight:600;display:block;margin-bottom:4px;">スライド番号</label>
+            <input id="clSlide" type="text" placeholder="例: 1 / 全体" style="width:90px;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#4a5568;font-weight:600;display:block;margin-bottom:4px;">カテゴリ</label>
+            <input id="clCategory" type="text" placeholder="例: テキスト修正" style="width:130px;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:13px;">
+          </div>
+          <div style="flex:1;min-width:180px;">
+            <label style="font-size:11px;color:#4a5568;font-weight:600;display:block;margin-bottom:4px;">変更内容</label>
+            <input id="clDesc" type="text" placeholder="変更した内容を入力..." style="width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:13px;">
+          </div>
+          <button onclick="addChangelogEntry()" style="padding:8px 16px;background:#2b6cb0;color:white;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">＋ 追加</button>
+        </div>
+      </div>
+      <!-- 履歴リスト -->
+      <div id="changelogList" style="overflow-y:auto;padding:16px 24px;flex:1;"></div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- サイドバー -->
+  <div class="sidebar">
+    <div class="sidebar-header">スライド一覧</div>
+    <div class="slide-list" id="slideList"></div>
+  </div>
+
+  <!-- 中央パネル -->
+  <div class="center-panel">
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-edit" onclick="switchTab('edit')">
+        ✏️ テキスト編集
+      </button>
+      <button class="tab-btn" id="tab-changes" onclick="switchTab('changes')">
+        📋 変更一覧
+        <span class="tab-count" id="tabChangeCount"></span>
+      </button>
+    </div>
+
+    <!-- 編集タブ -->
+    <div class="tab-content active" id="content-edit">
+      <div class="loading" id="loadingIndicator">
+        <div class="spinner"></div>
+        <div>スライドを読み込み中...</div>
+      </div>
+      <div id="slideEditorArea" style="display:none;"></div>
+    </div>
+
+    <!-- 変更一覧タブ -->
+    <div class="tab-content" id="content-changes">
+      <div id="changesArea">
+        <div class="changes-empty">
+          <div class="icon">📋</div>
+          <div>まだ変更はありません</div>
+          <div style="font-size:12px;margin-top:6px;color:#cbd5e0;">テキストを編集すると、ここに変更内容が表示されます</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- リサイズハンドル -->
+  <div class="resize-handle" id="resizeHandle" title="ドラッグしてプレビュー幅を変更"></div>
+
+  <!-- 右パネル（プレビュー） -->
+  <div class="preview-panel" id="previewPanel">
+    <div class="preview-header">
+      <div class="preview-header-left">
+        <span>プレビュー</span>
+        <span class="preview-slide-num" id="previewSlideNum">-</span>
+      </div>
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="changeZoom(-10)" title="縮小">−</button>
+        <span class="zoom-label" id="zoomLabel">100%</span>
+        <button class="zoom-btn" onclick="changeZoom(+10)" title="拡大">＋</button>
+        <button class="zoom-reset" onclick="resetZoom()" title="幅に合わせる">幅合わせ</button>
+        <button class="layout-edit-btn" id="layoutEditBtn" onclick="toggleLayoutEdit()" title="要素をドラッグで移動・リサイズ">✏️ 編集</button>
+        <button class="layout-save-btn" id="layoutSaveBtn" onclick="saveLayoutEdits()" style="display:none">💾 保存</button>
+      </div>
+    </div>
+    <div class="preview-img-wrap" id="previewImgWrap">
+      <div class="preview-no-img">スライドを選択してください</div>
+    </div>
+    <div id="layoutInfoBar"></div>
+    <div class="preview-note" id="previewNote">※保存前の元の状態を表示</div>
+  </div>
+
+</div>
+
+<script>
+let allSlides = [];
+let currentSlideIdx = 0;
+let pendingChanges = {};   // key: "slideIdx-shapeIdx-paraIdx-runIdx" → newText
+let originalValues = {};   // 元テキスト
+
+// ====== 初期ロード ======
+async function loadSlides() {
+  try {
+    const res = await fetch('/api/slides');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    allSlides = data.slides;
+    renderSidebar();
+    document.getElementById('loadingIndicator').style.display = 'none';
+    document.getElementById('slideEditorArea').style.display = 'block';
+    renderSlide(0);
+  } catch(e) {
+    document.getElementById('loadingIndicator').innerHTML =
+      `<div style="color:#fc8181">❌ 読み込みエラー: ${e.message}</div>`;
+  }
+}
+
+// ====== サイドバー ======
+function renderSidebar() {
+  const list = document.getElementById('slideList');
+  list.innerHTML = allSlides.map((slide, idx) => {
+    const firstShape = slide.shapes[0];
+    const previewText = firstShape?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
+    return `
+      <div class="slide-thumb" id="thumb-${idx}" onclick="renderSlide(${idx})">
+        <div class="slide-num">${slide.slideNum}</div>
+        <div class="slide-info">
+          <div class="slide-title-preview">${escH(previewText)}</div>
+        </div>
+        <div class="slide-change-count" id="count-${idx}">0</div>
+      </div>`;
+  }).join('');
+}
+
+// ====== スライド編集エリア ======
+function renderSlide(idx) {
+  currentSlideIdx = idx;
+  const slide = allSlides[idx];
+
+  // サイドバー更新
+  document.querySelectorAll('.slide-thumb').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+
+  // プレビュー更新
+  updatePreview(idx);
+
+  const area = document.getElementById('slideEditorArea');
+
+  if (!slide || slide.shapes.length === 0) {
+    area.innerHTML = `
+      <div class="slide-editor-card">
+        <div class="slide-editor-header">
+          <span class="slide-badge">Slide ${slide.slideNum}</span>
+          <span class="slide-editor-title">テキスト要素なし</span>
+        </div>
+        <div style="padding:40px;text-align:center;color:#a0aec0;">このスライドには編集可能なテキストがありません</div>
+        ${navHtml(idx)}
+      </div>`;
+    return;
+  }
+
+  const firstTitle = slide.shapes.find(s => s.isTitle);
+  const titleText = firstTitle?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
+
+  const shapesHtml = slide.shapes.map(shape => {
+    const typeBadge = shape.isTitle
+      ? `<span class="shape-type-badge badge-title">タイトル</span>`
+      : `<span class="shape-type-badge badge-body">テキスト</span>`;
+
+    const parasHtml = shape.paragraphs.map(para => {
+      const runsHtml = para.runs.map(run => {
+        const key = `${idx}-${shape.shapeIdx}-${para.paraIdx}-${run.runIdx}`;
+        if (!(key in originalValues)) originalValues[key] = run.text;
+        const cur = key in pendingChanges ? pendingChanges[key] : run.text;
+        const isChanged = key in pendingChanges && pendingChanges[key] !== originalValues[key];
+        return `
+          <div class="run-wrap">
+            ${para.runs.length > 1 ? `<span class="run-label">ラン ${run.runIdx+1}</span>` : ''}
+            <textarea class="run-input${isChanged ? ' changed' : ''}"
+              data-key="${key}" rows="1"
+              oninput="onTextChange(this)">${escH(cur)}</textarea>
+          </div>`;
+      }).join('');
+      return `
+        <div class="para-row">
+          ${shape.paragraphs.length > 1 ? `<div class="para-label">段落 ${para.paraIdx+1}</div>` : ''}
+          <div>${runsHtml}</div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="shape-card">
+        <div class="shape-header">
+          ${typeBadge}
+          <span class="shape-name">${escH(shape.name)}</span>
+        </div>
+        <div class="paragraphs-list">${parasHtml}</div>
+      </div>`;
+  }).join('');
+
+  area.innerHTML = `
+    <div class="slide-editor-card">
+      <div class="slide-editor-header">
+        <span class="slide-badge">Slide ${slide.slideNum}</span>
+        <span class="slide-editor-title">${escH(titleText)}</span>
+      </div>
+      <div class="shapes-list">${shapesHtml}</div>
+      ${navHtml(idx)}
+    </div>`;
+
+  // テキストエリア高さ自動調整
+  area.querySelectorAll('textarea').forEach(autoResize);
+}
+
+function navHtml(idx) {
+  return `
+    <div class="slide-nav">
+      <button class="btn-nav" onclick="renderSlide(${idx-1})" ${idx===0?'disabled':''}>← 前へ</button>
+      <span class="page-info">${idx+1} / ${allSlides.length}</span>
+      <button class="btn-nav" onclick="renderSlide(${idx+1})" ${idx===allSlides.length-1?'disabled':''}>次へ →</button>
+    </div>`;
+}
+
+// ====== プレビュー更新 ======
+let zoomPct = 100;
+
+function updatePreview(idx) {
+  const slide = allSlides[idx];
+  const num = String(slide.slideNum).padStart(2, '0');
+  const imgSrc = `/preview/slide_${num}.png`;
+
+  document.getElementById('previewSlideNum').textContent = `Slide ${slide.slideNum}`;
+  const wrap = document.getElementById('previewImgWrap');
+  wrap.innerHTML = `
+    <div class="slide-img-container" id="slideImgContainer">
+      <img id="previewImg" src="${imgSrc}" alt="Slide ${slide.slideNum}"
+        onload="onPreviewImgLoaded()"
+        onerror="document.getElementById('slideImgContainer').innerHTML='<div class=preview-no-img style=line-height:normal>プレビューなし</div>'">
+      <div id="layoutOverlay" class="layout-overlay"></div>
+    </div>`;
+  applyZoom();
+  if (layoutEditMode) loadLayoutElements();
+}
+
+function applyZoom() {
+  const img = document.querySelector('#previewImgWrap img');
+  if (!img) return;
+  if (zoomPct === 100) {
+    img.style.width = '100%';
+    img.style.minWidth = '';
+  } else {
+    const panel = document.getElementById('previewPanel');
+    const baseW = panel.offsetWidth - 24;
+    img.style.width = Math.round(baseW * zoomPct / 100) + 'px';
+    img.style.minWidth = img.style.width;
+  }
+  document.getElementById('zoomLabel').textContent = zoomPct + '%';
+  // ズーム変更時にオーバーレイを再描画
+  if (layoutEditMode && layoutElements.length > 0) {
+    requestAnimationFrame(renderLayoutOverlay);
+  }
+}
+
+function changeZoom(delta) {
+  zoomPct = Math.min(200, Math.max(30, zoomPct + delta));
+  applyZoom();
+}
+
+function resetZoom() {
+  zoomPct = 100;
+  applyZoom();
+}
+
+// ====== リサイズハンドル ======
+(function initResize() {
+  const handle = document.getElementById('resizeHandle');
+  const panel  = document.getElementById('previewPanel');
+  let dragging = false, startX = 0, startW = 0;
+
+  const SAVED_KEY = 'previewPanelWidth';
+  const saved = localStorage.getItem(SAVED_KEY);
+  if (saved) panel.style.width = saved + 'px';
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const diff = startX - e.clientX;   // ハンドルは左側 → 右に動かすと広がる
+    const newW = Math.min(700, Math.max(180, startW + diff));
+    panel.style.width = newW + 'px';
+    applyZoom();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    localStorage.setItem(SAVED_KEY, panel.offsetWidth);
+  });
+})();
+
+// ====== テキスト変更ハンドラ ======
+function onTextChange(textarea) {
+  const key = textarea.dataset.key;
+  pendingChanges[key] = textarea.value;
+
+  const isChanged = textarea.value !== originalValues[key];
+  textarea.classList.toggle('changed', isChanged);
+  autoResize(textarea);
+
+  const slideIdx = parseInt(key.split('-')[0]);
+  updateSidebarCount(slideIdx);
+  updateHeaderBadge();
+  updateChangesTab();
+}
+
+function autoResize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
+// ====== サイドバー変更件数 ======
+function updateSidebarCount(slideIdx) {
+  const count = Object.keys(pendingChanges).filter(k => {
+    return parseInt(k.split('-')[0]) === slideIdx &&
+           pendingChanges[k] !== originalValues[k];
+  }).length;
+
+  const thumb = document.getElementById(`thumb-${slideIdx}`);
+  const countEl = document.getElementById(`count-${slideIdx}`);
+  if (thumb && countEl) {
+    thumb.classList.toggle('modified', count > 0);
+    countEl.textContent = count;
+  }
+}
+
+// ====== ヘッダーバッジ ======
+function updateHeaderBadge() {
+  const total = Object.keys(pendingChanges).filter(k =>
+    pendingChanges[k] !== originalValues[k]).length;
+
+  const badge = document.getElementById('headerChangeBadge');
+  if (total > 0) {
+    badge.textContent = `変更 ${total} 件`;
+    badge.classList.add('visible');
+  } else {
+    badge.classList.remove('visible');
+  }
+
+  const tabCount = document.getElementById('tabChangeCount');
+  if (total > 0) {
+    tabCount.textContent = total;
+    tabCount.classList.add('visible');
+  } else {
+    tabCount.classList.remove('visible');
+  }
+}
+
+// ====== 変更一覧タブ ======
+function updateChangesTab() {
+  const area = document.getElementById('changesArea');
+
+  // 変更をスライド別にグループ化
+  const grouped = {};
+  for (const [key, newText] of Object.entries(pendingChanges)) {
+    if (newText === originalValues[key]) continue;
+    const [slideIdx, shapeIdx, paraIdx, runIdx] = key.split('-').map(Number);
+    if (!grouped[slideIdx]) grouped[slideIdx] = [];
+    grouped[slideIdx].push({ key, slideIdx, shapeIdx, paraIdx, runIdx, newText, orig: originalValues[key] });
+  }
+
+  if (Object.keys(grouped).length === 0) {
+    area.innerHTML = `
+      <div class="changes-empty">
+        <div class="icon">📋</div>
+        <div>まだ変更はありません</div>
+        <div style="font-size:12px;margin-top:6px;color:#cbd5e0;">テキストを編集すると、ここに変更内容が表示されます</div>
+      </div>`;
+    return;
+  }
+
+  area.innerHTML = Object.entries(grouped).map(([slideIdx, changes]) => {
+    const slide = allSlides[slideIdx];
+    const firstTitle = slide.shapes.find(s => s.isTitle);
+    const titleText = firstTitle?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
+
+    const itemsHtml = changes.map(c => {
+      const shape = slide.shapes.find(s => s.shapeIdx === c.shapeIdx);
+      const shapeName = shape?.name || `Shape ${c.shapeIdx}`;
+      const label = shape?.isTitle ? `タイトル「${shapeName}」` : `テキスト「${shapeName}」 段落${c.paraIdx+1}`;
+
+      return `
+        <div class="change-item">
+          <div class="change-field-label">📝 ${escH(label)}</div>
+          <div class="diff-row">
+            <div class="diff-box diff-before">${escH(c.orig) || '<em style="color:#a0aec0">（空白）</em>'}</div>
+            <div class="diff-arrow">→</div>
+            <div class="diff-box diff-after">${escH(c.newText) || '<em style="color:#a0aec0">（空白）</em>'}</div>
+          </div>
+          <button class="jump-btn" onclick="jumpToSlide(${slideIdx})">このスライドを編集</button>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="change-group">
+        <div class="change-group-header" onclick="jumpToSlide(${slideIdx})">
+          <span class="change-slide-badge">Slide ${slide.slideNum}</span>
+          <span class="change-group-title">${escH(titleText)}</span>
+          <span class="change-count-badge">${changes.length}件の変更</span>
+          <span class="change-arrow">→ 編集へ</span>
+        </div>
+        <div class="change-items">${itemsHtml}</div>
+      </div>`;
+  }).join('');
+}
+
+function jumpToSlide(slideIdx) {
+  switchTab('edit');
+  renderSlide(slideIdx);
+}
+
+// ====== タブ切り替え ======
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  document.getElementById(`content-${name}`).classList.add('active');
+}
+
+// ====== 保存 ======
+async function saveAll() {
+  const changedEntries = {};
+
+  for (const [key, newText] of Object.entries(pendingChanges)) {
+    if (newText === originalValues[key]) continue;
+    const [slideIdx, shapeIdx, paraIdx, runIdx] = key.split('-').map(Number);
+    const slide = allSlides[slideIdx];
+    if (!changedEntries[slide.entryName]) {
+      changedEntries[slide.entryName] = { entryName: slide.entryName, shapes: [] };
+    }
+    let shapeEntry = changedEntries[slide.entryName].shapes.find(s => s.shapeIdx === shapeIdx);
+    if (!shapeEntry) { shapeEntry = { shapeIdx, paragraphs: [] }; changedEntries[slide.entryName].shapes.push(shapeEntry); }
+    let paraEntry = shapeEntry.paragraphs.find(p => p.paraIdx === paraIdx);
+    if (!paraEntry) { paraEntry = { paraIdx, runs: [] }; shapeEntry.paragraphs.push(paraEntry); }
+    paraEntry.runs.push({ runIdx, text: newText });
+  }
+
+  const edits = Object.values(changedEntries);
+  if (edits.length === 0) { showStatus('変更がありません', 'error'); return; }
+
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中...';
+
+  try {
+    const res = await fetch('/api/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edits })
+    });
+    const data = await res.json();
+    if (data.success) {
+      for (const [key, newText] of Object.entries(pendingChanges)) {
+        if (newText !== originalValues[key]) {
+          originalValues[key] = newText;
+          const [si, shi, pi, ri] = key.split('-').map(Number);
+          const shape = allSlides[si].shapes.find(s => s.shapeIdx === shi);
+          const para = shape?.paragraphs.find(p => p.paraIdx === pi);
+          const run = para?.runs.find(r => r.runIdx === ri);
+          if (run) run.text = newText;
+        }
+      }
+      pendingChanges = {};
+      document.querySelectorAll('.slide-thumb.modified').forEach(el => {
+        el.classList.remove('modified');
+      });
+      document.querySelectorAll('.run-input.changed').forEach(el => el.classList.remove('changed'));
+      updateHeaderBadge();
+      updateChangesTab();
+      showStatus('✅ 保存しました', 'success');
+    } else {
+      showStatus('❌ ' + data.error, 'error');
+    }
+  } catch(e) {
+    showStatus('❌ 通信エラー', 'error');
+  }
+  saveBtn.disabled = false;
+  saveBtn.textContent = '💾 保存する';
+}
+
+// ====== 復元 ======
+async function restoreBackup() {
+  if (!confirm('元のファイルに戻しますか？\n保存済みの変更はすべて消えます。')) return;
+  try {
+    const res = await fetch('/api/restore', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      showStatus('✅ 復元しました。再読み込みします...', 'success');
+      pendingChanges = {}; originalValues = {};
+      setTimeout(() => location.reload(), 1500);
+    } else { showStatus('❌ ' + data.error, 'error'); }
+  } catch(e) { showStatus('❌ ' + e.message, 'error'); }
+}
+
+function showStatus(msg, type) {
+  const el = document.getElementById('saveStatus');
+  el.textContent = msg; el.className = 'save-status ' + type;
+  setTimeout(() => { el.className = 'save-status'; }, 3000);
+}
+
+function escH(str) {
+  if (!str) return '';
+  return str.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
+}
+
+// ====== レイアウトエディター（PowerPoint風） ======
+const SLIDE_EMU_W = 9144000;  // 10インチ
+const SLIDE_EMU_H = 5143500;  // 5.625インチ
+const EMU_PER_IN  = 914400;
+
+let layoutEditMode = false;
+let layoutElements = [];
+let layoutEntryName = null;
+let layoutDirty = false;
+let selectedIdx = -1;
+let dragInfo = null;
+
+// ハンドル定義：方向 → cursor / 位置クラス
+const HANDLES = ['nw','n','ne','e','se','s','sw','w'];
+
+function toggleLayoutEdit() {
+  layoutEditMode = !layoutEditMode;
+  const btn = document.getElementById('layoutEditBtn');
+  const saveBtn = document.getElementById('layoutSaveBtn');
+  btn.classList.toggle('active', layoutEditMode);
+  btn.textContent = layoutEditMode ? '✅ 編集中' : '✏️ 編集';
+  saveBtn.style.display = layoutEditMode ? 'inline-block' : 'none';
+  document.getElementById('layoutInfoBar').style.display = layoutEditMode ? 'block' : 'none';
+  document.getElementById('previewNote').style.display  = layoutEditMode ? 'none'  : 'block';
+  if (layoutEditMode) {
+    loadLayoutElements();
+    document.addEventListener('keydown', onLayoutKeydown);
+  } else {
+    clearLayoutOverlay();
+    layoutElements = []; layoutDirty = false; selectedIdx = -1;
+    document.removeEventListener('keydown', onLayoutKeydown);
+    showInfo(null);
+  }
+}
+
+function onLayoutKeydown(e) {
+  if (!layoutEditMode) return;
+  if (e.key === 'Escape') {
+    deselectAll();
+  }
+  // 矢印キーで1px（≒9144 EMU）ずつ移動
+  if (selectedIdx >= 0 && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+    e.preventDefault();
+    const el = layoutElements[selectedIdx];
+    const step = e.shiftKey ? 91440 : 9144; // Shift=大きく移動
+    if (e.key === 'ArrowLeft')  el.x -= step;
+    if (e.key === 'ArrowRight') el.x += step;
+    if (e.key === 'ArrowUp')    el.y -= step;
+    if (e.key === 'ArrowDown')  el.y += step;
+    syncElDiv(selectedIdx);
+    layoutDirty = true;
+    updateSaveBtn();
+    showInfo(el);
+  }
+}
+
+async function loadLayoutElements() {
+  const slide = allSlides[currentSlideIdx];
+  if (!slide) return;
+  try {
+    const res = await fetch(`/api/slide-positions/${slide.slideNum}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    layoutElements = data.elements;
+    layoutEntryName = data.entryName;
+    layoutDirty = false; selectedIdx = -1;
+    updateSaveBtn();
+    showInfo(null);
+    const img = document.getElementById('previewImg');
+    if (img && img.complete && img.naturalWidth > 0) renderLayoutOverlay();
+  } catch(e) { console.error('Layout load:', e); }
+}
+
+function onPreviewImgLoaded() {
+  if (layoutEditMode && layoutElements.length > 0) renderLayoutOverlay();
+}
+
+function getScale() {
+  const img = document.getElementById('previewImg');
+  if (!img || !img.offsetWidth) return null;
+  return { sx: img.offsetWidth / SLIDE_EMU_W, sy: img.offsetHeight / SLIDE_EMU_H };
+}
+
+function renderLayoutOverlay() {
+  const overlay = document.getElementById('layoutOverlay');
+  if (!overlay) return;
+  const sc = getScale();
+  if (!sc) return;
+  overlay.innerHTML = '';
+  overlay.classList.add('active');
+
+  layoutElements.forEach((el, i) => {
+    const div = document.createElement('div');
+    div.className = 'edit-el';
+    div.dataset.i = i;
+    positionDiv(div, el, sc);
+
+    // 8点ハンドル
+    HANDLES.forEach(dir => {
+      const h = document.createElement('div');
+      h.className = `rh rh-${dir}`;
+      h.dataset.dir = dir;
+      h.addEventListener('mousedown', onHandleDown);
+      div.appendChild(h);
+    });
+
+    div.addEventListener('mousedown', onElDown);
+    overlay.appendChild(div);
+  });
+
+  // オーバーレイ外クリックで解除
+  overlay.addEventListener('mousedown', onOverlayBgDown);
+
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('mouseup',   onDragEnd);
+}
+
+function positionDiv(div, el, sc) {
+  if (!sc) { sc = getScale(); if (!sc) return; }
+  div.style.left   = Math.round(el.x  * sc.sx) + 'px';
+  div.style.top    = Math.round(el.y  * sc.sy) + 'px';
+  div.style.width  = Math.round(el.cx * sc.sx) + 'px';
+  div.style.height = Math.round(el.cy * sc.sy) + 'px';
+}
+
+function syncElDiv(i) {
+  const divs = document.querySelectorAll('.edit-el');
+  if (divs[i]) positionDiv(divs[i], layoutElements[i], null);
+}
+
+function clearLayoutOverlay() {
+  const ov = document.getElementById('layoutOverlay');
+  if (ov) { ov.innerHTML = ''; ov.classList.remove('active'); }
+  document.removeEventListener('mousemove', onDragMove);
+  document.removeEventListener('mouseup',   onDragEnd);
+}
+
+function deselectAll() {
+  selectedIdx = -1;
+  document.querySelectorAll('.edit-el').forEach(d => d.classList.remove('selected'));
+  showInfo(null);
+}
+
+function selectEl(i) {
+  selectedIdx = i;
+  document.querySelectorAll('.edit-el').forEach((d, j) =>
+    d.classList.toggle('selected', j === i));
+  showInfo(layoutElements[i]);
+}
+
+function onOverlayBgDown(e) {
+  if (e.target === e.currentTarget) deselectAll();
+}
+
+function onElDown(e) {
+  if (e.target.classList.contains('rh')) return;
+  e.preventDefault(); e.stopPropagation();
+  const i = parseInt(e.currentTarget.dataset.i);
+  selectEl(i);
+  const sc = getScale(); if (!sc) return;
+  dragInfo = {
+    div: e.currentTarget, i, mode: 'move', sc,
+    mx0: e.clientX, my0: e.clientY,
+    x0: layoutElements[i].x, y0: layoutElements[i].y
+  };
+}
+
+function onHandleDown(e) {
+  e.preventDefault(); e.stopPropagation();
+  const div = e.currentTarget.parentElement;
+  const i = parseInt(div.dataset.i);
+  selectEl(i);
+  const sc = getScale(); if (!sc) return;
+  const el = layoutElements[i];
+  dragInfo = {
+    div, i, mode: 'resize', dir: e.currentTarget.dataset.dir, sc,
+    mx0: e.clientX, my0: e.clientY,
+    x0: el.x, y0: el.y, cx0: el.cx, cy0: el.cy
+  };
+}
+
+function onDragMove(e) {
+  if (!dragInfo) return;
+  const { div, i, mode, sc, mx0, my0 } = dragInfo;
+  const dx = Math.round((e.clientX - mx0) / sc.sx);
+  const dy = Math.round((e.clientY - my0) / sc.sy);
+  const el = layoutElements[i];
+  const MIN = 91440;
+
+  if (mode === 'move') {
+    el.x = dragInfo.x0 + dx;
+    el.y = dragInfo.y0 + dy;
+  } else {
+    // リサイズ：ハンドル方向に応じて x/y/cx/cy を変更
+    const dir = dragInfo.dir;
+    const { x0, y0, cx0, cy0 } = dragInfo;
+    let nx = el.x, ny = el.y, ncx = el.cx, ncy = el.cy;
+
+    if (dir.includes('w')) { nx = x0 + dx; ncx = Math.max(MIN, cx0 - dx); }
+    if (dir.includes('e')) { ncx = Math.max(MIN, cx0 + dx); }
+    if (dir.includes('n')) { ny = y0 + dy; ncy = Math.max(MIN, cy0 - dy); }
+    if (dir.includes('s')) { ncy = Math.max(MIN, cy0 + dy); }
+
+    // 最小サイズを下回った場合は位置も補正
+    if (dir.includes('w') && ncx === MIN) nx = x0 + (cx0 - MIN);
+    if (dir.includes('n') && ncy === MIN) ny = y0 + (cy0 - MIN);
+
+    el.x = nx; el.y = ny; el.cx = ncx; el.cy = ncy;
+  }
+
+  positionDiv(div, el, sc);
+  layoutDirty = true;
+  updateSaveBtn();
+  showInfo(el);
+}
+
+function onDragEnd() { dragInfo = null; }
+
+// インチ表示のインフォバー
+function showInfo(el) {
+  const bar = document.getElementById('layoutInfoBar');
+  if (!el) { bar.textContent = ''; return; }
+  const f = v => (v / EMU_PER_IN).toFixed(2);
+  bar.textContent = `X: ${f(el.x)}"  Y: ${f(el.y)}"  W: ${f(el.cx)}"  H: ${f(el.cy)}"`;
+}
+
+function updateSaveBtn() {
+  const btn = document.getElementById('layoutSaveBtn');
+  if (!btn) return;
+  btn.textContent = layoutDirty ? '💾 保存 ●' : '💾 保存';
+  btn.disabled = false;
+}
+
+async function saveLayoutEdits() {
+  if (!layoutDirty || !layoutEntryName) return;
+  const btn = document.getElementById('layoutSaveBtn');
+  btn.textContent = '保存中...'; btn.disabled = true;
+  try {
+    const res = await fetch('/api/update-positions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entryName: layoutEntryName, updates: layoutElements })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    layoutDirty = false;
+    btn.textContent = '✅ 保存済';
+    setTimeout(() => { btn.textContent = '💾 保存'; btn.disabled = false; }, 2500);
+  } catch(e) {
+    alert('保存エラー: ' + e.message);
+    btn.textContent = '💾 保存 ●'; btn.disabled = false;
+  }
+}
+
+// ====== 動画レビュー ======
+let vrScripts = {};
+const vrState = {
+  idx: 0, total: 0, playing: false,
+  speed: 0.93,        // 少しゆっくり = 人間らしいテンポ
+  intonation: 1.5,    // 自然な抑揚
+  pause: 1.3,         // フレーズ間の間（息継ぎ感）
+  speaker: 8, audio: null, blobUrl: null, abortCtrl: null
+};
+
+async function openVideoReview() {
+  if (!allSlides.length) { alert('スライドが読み込まれていません'); return; }
+  try {
+    const res = await fetch('/api/scripts');
+    const data = await res.json();
+    vrScripts = data.scripts || {};
+  } catch(e) { vrScripts = {}; }
+
+  // スピーカー一覧を取得して dropdown に反映
+  try {
+    const sRes = await fetch('/api/voicevox/speakers');
+    const speakers = await sRes.json();
+    const sel = document.getElementById('vrSpeakerSelect');
+    sel.innerHTML = '';
+    speakers.forEach(sp => {
+      sp.styles.forEach(st => {
+        const opt = document.createElement('option');
+        opt.value = st.id;
+        opt.textContent = `${sp.name}（${st.name}）`;
+        if (st.id === vrState.speaker) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+  } catch(e) { /* VOICEVOXが起動していない場合はデフォルトのまま */ }
+
+  vrState.total = allSlides.length;
+  vrState.idx = currentSlideIdx;
+  vrState.playing = false;
+
+  document.getElementById('videoReviewOverlay').classList.add('open');
+  vrRenderSlide();
+}
+
+function closeVideoReview() {
+  vrStop();
+  document.getElementById('videoReviewOverlay').classList.remove('open');
+}
+
+function vrRenderSlide() {
+  const slide = allSlides[vrState.idx];
+  const num = String(slide.slideNum).padStart(2, '0');
+  document.getElementById('vrSlideImg').src = `/preview/slide_${num}.png`;
+  document.getElementById('vrSlideInfo').textContent = `Slide ${slide.slideNum} / ${vrState.total}`;
+  document.getElementById('vrTime').textContent = `${vrState.idx + 1} / ${vrState.total}`;
+  document.getElementById('vrProgressFill').style.width = `${((vrState.idx) / (vrState.total - 1)) * 100}%`;
+
+  const script = vrScripts[String(slide.slideNum)] || '（このスライドのナレーション原稿がありません）';
+  document.getElementById('vrScriptText').textContent = script;
+
+  document.getElementById('vrPrevBtn').disabled = vrState.idx === 0;
+  document.getElementById('vrNextBtn').disabled = vrState.idx === vrState.total - 1;
+}
+
+function vrTogglePlay() {
+  vrState.playing ? vrPause() : vrPlay();
+}
+
+function vrPlay() {
+  vrState.playing = true;
+  document.getElementById('vrPlayBtn').textContent = '⏸';
+  // 一時停止中のオーディオがあればそこから再開
+  if (vrState.audio && vrState.audio.paused && vrState.audio.src) {
+    vrState.audio.play();
+  } else {
+    vrSpeakCurrent();
+  }
+}
+
+function vrPause() {
+  vrState.playing = false;
+  document.getElementById('vrPlayBtn').textContent = '▶';
+  if (vrState.audio) vrState.audio.pause();
+  if (vrState.abortCtrl) { vrState.abortCtrl.abort(); vrState.abortCtrl = null; }
+}
+
+function vrStop() {
+  vrState.playing = false;
+  document.getElementById('vrPlayBtn').textContent = '▶';
+  if (vrState.abortCtrl) { vrState.abortCtrl.abort(); vrState.abortCtrl = null; }
+  if (vrState.audio) { vrState.audio.pause(); vrState.audio = null; }
+  if (vrState.blobUrl) { URL.revokeObjectURL(vrState.blobUrl); vrState.blobUrl = null; }
+}
+
+async function vrSpeakCurrent() {
+  // 前の音声を破棄
+  if (vrState.abortCtrl) vrState.abortCtrl.abort();
+  if (vrState.audio) { vrState.audio.pause(); vrState.audio = null; }
+  if (vrState.blobUrl) { URL.revokeObjectURL(vrState.blobUrl); vrState.blobUrl = null; }
+
+  const slide = allSlides[vrState.idx];
+  const script = vrScripts[String(slide.slideNum)] || '';
+  if (!script) { vrAdvance(); return; }
+
+  // ローディング表示
+  document.getElementById('vrScriptText').innerHTML =
+    `<span class="vr-loading-text">🎵 音声を生成中...</span>`;
+  document.getElementById('vrPlayBtn').textContent = '⌛';
+
+  vrState.abortCtrl = new AbortController();
+  try {
+    const res = await fetch('/api/voicevox/audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: script,
+        speaker: vrState.speaker,
+        speedScale: vrState.speed,
+        intonationScale: vrState.intonation,
+        pauseLengthScale: vrState.pause,
+        prePhonemeLength: 0.12,    // 発話前の小さな間（息継ぎ）
+        postPhonemeLength: 0.12,   // 発話後の余韻
+      }),
+      signal: vrState.abortCtrl.signal
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    vrState.blobUrl = URL.createObjectURL(blob);
+
+    if (!vrState.playing) return; // 生成中に停止された
+
+    document.getElementById('vrPlayBtn').textContent = '⏸';
+    document.getElementById('vrScriptText').textContent = script;
+
+    const audio = new Audio(vrState.blobUrl);
+    vrState.audio = audio;
+
+    // 再生位置に合わせてテキストをハイライト
+    audio.addEventListener('timeupdate', () => {
+      if (!audio.duration) return;
+      const ratio = audio.currentTime / audio.duration;
+      const pos = Math.floor(ratio * script.length);
+      document.getElementById('vrScriptText').innerHTML =
+        `<span class="spoken">${escH(script.substring(0, pos))}</span>${escH(script.substring(pos))}`;
+    });
+
+    audio.addEventListener('ended', () => {
+      if (!vrState.playing) return;
+      setTimeout(vrAdvance, 500);
+    });
+
+    audio.addEventListener('error', () => {
+      if (vrState.playing) setTimeout(vrAdvance, 500);
+    });
+
+    audio.play();
+  } catch(e) {
+    if (e.name === 'AbortError') return;
+    console.error('VOICEVOX error:', e);
+    document.getElementById('vrScriptText').textContent = script;
+    document.getElementById('vrPlayBtn').textContent = vrState.playing ? '⏸' : '▶';
+    if (vrState.playing) setTimeout(vrAdvance, 1000);
+  }
+}
+
+function vrAdvance() {
+  if (!vrState.playing) return;
+  if (vrState.idx < vrState.total - 1) {
+    vrState.idx++;
+    vrRenderSlide();
+    vrSpeakCurrent();
+  } else {
+    vrStop();
+    document.getElementById('vrScriptText').textContent += '\n\n✅ 全スライド再生完了';
+  }
+}
+
+function vrNext() {
+  vrStop();
+  if (vrState.idx < vrState.total - 1) { vrState.idx++; vrRenderSlide(); }
+}
+
+function vrPrev() {
+  vrStop();
+  if (vrState.idx > 0) { vrState.idx--; vrRenderSlide(); }
+}
+
+function vrGotoSlide(idx) {
+  vrStop();
+  vrState.idx = Math.max(0, Math.min(vrState.total - 1, idx));
+  vrRenderSlide();
+}
+
+function vrSetSpeed(s) {
+  vrState.speed = s;
+  const speedMap = { 0.80:'遅め', 0.93:'自然', 1.00:'標準', 1.15:'速め' };
+  document.querySelectorAll('.vr-speed-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === (speedMap[s] || ''));
+  });
+  if (vrState.playing) {
+    // 速度変更は音声を再生成する必要がある
+    if (vrState.audio) { vrState.audio.pause(); vrState.audio = null; }
+    if (vrState.blobUrl) { URL.revokeObjectURL(vrState.blobUrl); vrState.blobUrl = null; }
+    vrSpeakCurrent();
+  }
+}
+
+function vrSetSpeaker(id) {
+  vrState.speaker = parseInt(id, 10);
+  if (vrState.playing) {
+    if (vrState.audio) { vrState.audio.pause(); vrState.audio = null; }
+    if (vrState.blobUrl) { URL.revokeObjectURL(vrState.blobUrl); vrState.blobUrl = null; }
+    vrSpeakCurrent();
+  }
+}
+
+function vrSetPause(v) {
+  vrState.pause = v;
+  // 間ボタンのアクティブ状態更新
+  const pauseLabels = { 0.8:'短め', 1.0:'標準', 1.3:'自然', 1.6:'ゆっくり' };
+  document.querySelectorAll('.vr-intonation-btn').forEach(b => {
+    if (Object.values(pauseLabels).includes(b.textContent)) {
+      b.classList.toggle('active', b.textContent === pauseLabels[v]);
+    }
+  });
+  if (vrState.playing) {
+    if (vrState.audio) { vrState.audio.pause(); vrState.audio = null; }
+    if (vrState.blobUrl) { URL.revokeObjectURL(vrState.blobUrl); vrState.blobUrl = null; }
+    vrSpeakCurrent();
+  }
+}
+
+function vrSetIntonation(v) {
+  vrState.intonation = v;
+  // 抑揚ボタンのアクティブ状態更新
+  const intonationLabels = { 0.8:'フラット', 1.2:'自然', 1.5:'豊か', 2.0:'強調' };
+  document.querySelectorAll('.vr-intonation-btn').forEach(b => {
+    if (Object.values(intonationLabels).includes(b.textContent)) {
+      b.classList.toggle('active', b.textContent === intonationLabels[v]);
+    }
+  });
+  document.querySelectorAll('.vr-intonation-btn').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.textContent) === v ||
+      (b.textContent === '抑え' && v === 0.8) ||
+      (b.textContent === '標準' && v === 1.0) ||
+      (b.textContent === '豊か' && v === 1.3) ||
+      (b.textContent === '最大' && v === 1.6));
+  });
+  if (vrState.playing) {
+    if (vrState.audio) { vrState.audio.pause(); vrState.audio = null; }
+    if (vrState.blobUrl) { URL.revokeObjectURL(vrState.blobUrl); vrState.blobUrl = null; }
+    vrSpeakCurrent();
+  }
+}
+
+function vrSeekClick(e) {
+  const bar = document.getElementById('vrProgressBar');
+  const ratio = e.offsetX / bar.offsetWidth;
+  const idx = Math.round(ratio * (vrState.total - 1));
+  vrGotoSlide(idx);
+}
+
+function vrEditScript() {
+  const slide = allSlides[vrState.idx];
+  const key = String(slide.slideNum);
+  const current = vrScripts[key] || '';
+  const newScript = prompt(`Slide ${slide.slideNum} のナレーション原稿を編集:`, current);
+  if (newScript === null) return;
+  vrScripts[key] = newScript;
+  vrRenderSlide();
+  fetch('/api/scripts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scripts: vrScripts })
+  });
+}
+
+// オーバーレイ内のキーボード操作
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('videoReviewOverlay').classList.contains('open')) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); vrNext(); }
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); vrPrev(); }
+  if (e.key === ' ') { e.preventDefault(); vrTogglePlay(); }
+  if (e.key === 'Escape') closeVideoReview();
+});
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveAll(); return; }
+
+  // テキストエリア入力中は無効
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    if (currentSlideIdx < allSlides.length - 1) {
+      renderSlide(currentSlideIdx + 1);
+      scrollSidebarToActive();
+    }
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (currentSlideIdx > 0) {
+      renderSlide(currentSlideIdx - 1);
+      scrollSidebarToActive();
+    }
+  }
+});
+
+function scrollSidebarToActive() {
+  const active = document.querySelector('.slide-thumb.active');
+  if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+loadSlides();
+
+// ══════════════════════════════
+// 変更履歴
+// ══════════════════════════════
+async function openChangelog() {
+  document.getElementById('changelogModal').style.display = 'flex';
+  await renderChangelog();
+}
+function closeChangelog() {
+  document.getElementById('changelogModal').style.display = 'none';
+}
+
+async function renderChangelog() {
+  const res = await fetch('/api/changelog');
+  const { log } = await res.json();
+  const list = document.getElementById('changelogList');
+  // バッジ更新
+  const badge = document.getElementById('changelogBadge');
+  if (log.length > 0) { badge.style.display='flex'; badge.textContent=log.length; }
+  else { badge.style.display='none'; }
+
+  if (log.length === 0) {
+    list.innerHTML = '<p style="color:#a0aec0;text-align:center;padding:32px 0;">変更履歴はまだありません</p>';
+    return;
+  }
+  list.innerHTML = log.map(e => `
+    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f0f2f5;align-items:flex-start;">
+      <div style="flex-shrink:0;text-align:center;min-width:52px;">
+        <div style="background:#ebf4ff;color:#2b6cb0;border-radius:6px;padding:3px 6px;font-size:11px;font-weight:700;">Slide</div>
+        <div style="font-size:17px;font-weight:800;color:#2b6cb0;margin-top:2px;">${e.slide}</div>
+      </div>
+      <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="background:#fef3c7;color:#92400e;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;">${e.category || '未分類'}</span>
+          <span style="font-size:11px;color:#a0aec0;">${e.date} ${e.time}</span>
+        </div>
+        <p style="font-size:13px;color:#2d3748;line-height:1.5;">${e.description}</p>
+      </div>
+      <button onclick="deleteChangelogEntry(${e.id})" style="background:none;border:none;color:#cbd5e0;cursor:pointer;font-size:16px;flex-shrink:0;" title="削除">🗑</button>
+    </div>
+  `).join('');
+}
+
+async function addChangelogEntry() {
+  const slide    = document.getElementById('clSlide').value.trim() || '全体';
+  const category = document.getElementById('clCategory').value.trim() || '修正';
+  const description = document.getElementById('clDesc').value.trim();
+  if (!description) { alert('変更内容を入力してください'); return; }
+  await fetch('/api/changelog', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slide, category, description })
+  });
+  document.getElementById('clSlide').value = '';
+  document.getElementById('clCategory').value = '';
+  document.getElementById('clDesc').value = '';
+  await renderChangelog();
+}
+
+async function deleteChangelogEntry(id) {
+  if (!confirm('この履歴を削除しますか？')) return;
+  await fetch(`/api/changelog/${id}`, { method: 'DELETE' });
+  await renderChangelog();
+}
+
+// 初期バッジ表示
+fetch('/api/changelog').then(r=>r.json()).then(({log})=>{
+  const badge = document.getElementById('changelogBadge');
+  if(log && log.length>0){ badge.style.display='flex'; badge.textContent=log.length; }
+});
+</script>
+</body>
+</html>

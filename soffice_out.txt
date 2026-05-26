@@ -1,0 +1,2 @@
+convert C:\Users\’·àVŠJ\Downloads\TORIHADA_‘æ1T_Œ¤C‘—¿_v2.pptx as a Impress document -> C:\Users\’·àVŠJ\Downloads\TORIHADA_‘æ1T_Œ¤C‘—¿_v2.pdf using filter : impress_pdf_Export
+Overwriting: C:\Users\’·àVŠJ\Downloads\TORIHADA_‘æ1T_Œ¤C‘—¿_v2.pdf

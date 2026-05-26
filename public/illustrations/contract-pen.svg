@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Document shadow -->
+  <rect x="76" y="46" width="220" height="290" rx="16" fill="#CCCCCC" opacity="0.4"/>
+  <!-- Document body -->
+  <rect x="68" y="38" width="220" height="290" rx="16" fill="white" stroke="#E0E0E0" stroke-width="2"/>
+  <!-- Document header bar -->
+  <rect x="68" y="38" width="220" height="52" rx="16" fill="#264653"/>
+  <rect x="68" y="72" width="220" height="18" fill="#264653"/>
+  <!-- Header text -->
+  <text x="178" y="72" font-family="Arial" font-size="13" fill="white" text-anchor="middle" font-weight="bold">CONTRACT</text>
+  <!-- Pink accent line -->
+  <rect x="68" y="90" width="220" height="4" fill="#FF4DB8"/>
+
+  <!-- Content lines -->
+  <rect x="90" y="110" width="176" height="8" rx="4" fill="#E8E8E8"/>
+  <rect x="90" y="128" width="140" height="8" rx="4" fill="#E8E8E8"/>
+  <rect x="90" y="146" width="160" height="8" rx="4" fill="#E8E8E8"/>
+  <rect x="90" y="164" width="120" height="8" rx="4" fill="#E8E8E8"/>
+
+  <!-- Checkbox items -->
+  <rect x="90" y="185" width="14" height="14" rx="3" fill="#FF4DB8"/>
+  <polyline points="92,192 96,196 103,188" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <rect x="112" y="188" width="100" height="8" rx="4" fill="#E8E8E8"/>
+
+  <rect x="90" y="208" width="14" height="14" rx="3" fill="#FF4DB8"/>
+  <polyline points="92,215 96,219 103,211" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <rect x="112" y="211" width="120" height="8" rx="4" fill="#E8E8E8"/>
+
+  <rect x="90" y="231" width="14" height="14" rx="3" fill="#264653"/>
+  <rect x="112" y="234" width="90" height="8" rx="4" fill="#E8E8E8"/>
+
+  <!-- Signature line -->
+  <line x1="90" x2="268" y1="292" y2="292" stroke="#CCCCCC" stroke-width="2"/>
+  <path d="M 100 287 Q 115 272 130 282 Q 145 292 160 275 Q 172 262 185 278" stroke="#FF4DB8" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <text x="90" y="308" font-family="Arial" font-size="10" fill="#AAAAAA">Signature</text>
+
+  <!-- Pen -->
+  <g transform="rotate(-35, 290, 280)">
+    <!-- Pen body -->
+    <rect x="270" y="180" width="24" height="130" rx="5" fill="#264653"/>
+    <rect x="274" y="186" width="6" height="110" rx="3" fill="#3d6070" opacity="0.5"/>
+    <!-- Pen tip -->
+    <polygon points="270,308 294,308 282,345" fill="#FF4DB8"/>
+    <!-- Pen top -->
+    <rect x="270" y="172" width="24" height="14" rx="5" fill="#FF4DB8"/>
+    <!-- Pen clip -->
+    <rect x="288" y="175" width="6" height="90" rx="3" fill="#FFB3E0"/>
+  </g>
+
+  <!-- Sparkle near signature -->
+  <text x="300" y="360" font-family="Arial" font-size="18" fill="#FF4DB8" opacity="0.7">✦</text>
+</svg>

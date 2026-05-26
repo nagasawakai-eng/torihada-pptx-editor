@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Sound waves (back) -->
+  <path d="M 290 140 Q 340 200 290 260" stroke="#FFB3E0" stroke-width="12" fill="none" stroke-linecap="round"/>
+  <path d="M 315 115 Q 375 200 315 285" stroke="#FFB3E0" stroke-width="10" fill="none" stroke-linecap="round"/>
+
+  <!-- Megaphone cone -->
+  <polygon points="80,155 80,245 230,290 230,110" fill="#FF4DB8"/>
+  <polygon points="80,155 80,245 230,290 230,110" fill="url(#megGrad)" opacity="0.3"/>
+
+  <!-- Shine -->
+  <polygon points="100,162 100,190 185,155 185,133" fill="white" opacity="0.15"/>
+
+  <!-- Mouthpiece -->
+  <rect x="38" y="162" width="52" height="76" rx="10" fill="#264653"/>
+  <rect x="48" y="172" width="32" height="56" rx="6" fill="#3d6070"/>
+
+  <!-- Handle -->
+  <rect x="150" y="288" width="28" height="70" rx="14" fill="#264653"/>
+
+  <!-- PR star badge -->
+  <circle cx="310" cy="115" r="42" fill="#FF4DB8"/>
+  <circle cx="310" cy="115" r="36" fill="#264653"/>
+  <text x="310" y="108" font-family="Arial" font-size="16" fill="white" text-anchor="middle" font-weight="bold">P R</text>
+  <text x="310" y="128" font-family="Arial" font-size="11" fill="#FF4DB8" text-anchor="middle">案件</text>
+
+  <!-- Small stars scattered -->
+  <text x="60" y="120" font-family="Arial" font-size="22" fill="#FF4DB8" opacity="0.6">✦</text>
+  <text x="330" y="310" font-family="Arial" font-size="18" fill="#FFB3E0" opacity="0.8">✦</text>
+  <text x="95" y="310" font-family="Arial" font-size="14" fill="#FF4DB8" opacity="0.5">✦</text>
+
+  <defs>
+    <linearGradient id="megGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:white;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:white;stop-opacity:0"/>
+    </linearGradient>
+  </defs>
+</svg>

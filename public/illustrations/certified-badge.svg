@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Outer badge ring -->
+  <circle cx="200" cy="185" r="145" fill="#264653"/>
+  <circle cx="200" cy="185" r="135" fill="#FF4DB8"/>
+  <circle cx="200" cy="185" r="122" fill="#264653"/>
+  <circle cx="200" cy="185" r="112" fill="white"/>
+
+  <!-- Inner badge decoration - gear-like border -->
+  <circle cx="200" cy="185" r="108" fill="none" stroke="#FF4DB8" stroke-width="3" stroke-dasharray="12,8"/>
+
+  <!-- Star in center -->
+  <polygon points="200,90 218,148 280,148 230,184 248,242 200,208 152,242 170,184 120,148 182,148" fill="#FF4DB8"/>
+  <!-- Star shine -->
+  <polygon points="200,100 215,145 272,145 228,178 243,235 200,202 157,235 172,178 128,145 185,145" fill="#FFE455" opacity="0.6"/>
+
+  <!-- Checkmark in star center -->
+  <circle cx="200" cy="178" r="30" fill="white" opacity="0.95"/>
+  <polyline points="184,178 195,190 220,163" stroke="#264653" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- "研修修了" text -->
+  <text x="200" y="252" font-family="Arial" font-size="17" fill="#264653" text-anchor="middle" font-weight="bold">研修修了</text>
+
+  <!-- Ribbon bottom -->
+  <path d="M 155 310 L 200 340 L 245 310 L 235 370 L 200 355 L 165 370 Z" fill="#FF4DB8"/>
+  <path d="M 162 314 L 200 340 L 238 314 L 230 362 L 200 348 L 170 362 Z" fill="#264653"/>
+  <text x="200" y="345" font-family="Arial" font-size="11" fill="#FF4DB8" text-anchor="middle" font-weight="bold">✓</text>
+
+  <!-- Sparkle decorations -->
+  <text x="55" y="110" font-family="Arial" font-size="22" fill="#FFB3E0">✦</text>
+  <text x="325" y="120" font-family="Arial" font-size="18" fill="#FFB3E0">✦</text>
+  <text x="65" y="285" font-family="Arial" font-size="14" fill="#FF4DB8" opacity="0.6">✦</text>
+  <text x="315" y="290" font-family="Arial" font-size="14" fill="#FF4DB8" opacity="0.6">✦</text>
+</svg>

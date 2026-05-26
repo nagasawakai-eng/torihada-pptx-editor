@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Connection lines -->
+  <line x1="200" y1="195" x2="80" y2="285" stroke="#FFB3E0" stroke-width="4" stroke-dasharray="8,5"/>
+  <line x1="200" y1="195" x2="320" y2="285" stroke="#FFB3E0" stroke-width="4" stroke-dasharray="8,5"/>
+  <line x1="80" y1="285" x2="320" y2="285" stroke="#E8C0DA" stroke-width="3" stroke-dasharray="6,5"/>
+
+  <!-- Center node (TORIHADA) -->
+  <circle cx="200" cy="170" r="52" fill="#FF4DB8"/>
+  <circle cx="200" cy="170" r="44" fill="#264653"/>
+  <!-- T logo / company icon -->
+  <text x="200" y="162" font-family="Arial" font-size="18" fill="white" text-anchor="middle" font-weight="bold">TORI</text>
+  <text x="200" y="182" font-family="Arial" font-size="13" fill="#FFB3E0" text-anchor="middle">HADA</text>
+  <!-- Pulse ring -->
+  <circle cx="200" cy="170" r="58" fill="none" stroke="#FF4DB8" stroke-width="3" opacity="0.4"/>
+  <circle cx="200" cy="170" r="66" fill="none" stroke="#FF4DB8" stroke-width="2" opacity="0.2"/>
+
+  <!-- Left node (広告主) -->
+  <circle cx="78" cy="288" r="46" fill="#FF4DB8"/>
+  <circle cx="78" cy="288" r="38" fill="white"/>
+  <!-- Building icon -->
+  <rect x="58" y="272" width="40" height="35" rx="3" fill="#264653"/>
+  <rect x="63" y="278" width="8" height="8" rx="1" fill="white" opacity="0.7"/>
+  <rect x="76" y="278" width="8" height="8" rx="1" fill="white" opacity="0.7"/>
+  <rect x="89" y="278" width="8" height="8" rx="1" fill="white" opacity="0.7"/>
+  <rect x="63" y="292" width="8" height="8" rx="1" fill="white" opacity="0.7"/>
+  <rect x="76" y="292" width="8" height="8" rx="1" fill="white" opacity="0.7"/>
+  <rect x="67" y="302" width="22" height="5" rx="1" fill="#FF4DB8"/>
+  <text x="78" y="352" font-family="Arial" font-size="11" fill="#264653" text-anchor="middle" font-weight="bold">広告主</text>
+
+  <!-- Right node (クリエイター) -->
+  <circle cx="322" cy="288" r="46" fill="#FF4DB8"/>
+  <circle cx="322" cy="288" r="38" fill="white"/>
+  <!-- Person/creator icon -->
+  <circle cx="322" cy="272" r="12" fill="#264653"/>
+  <path d="M 298 308 Q 298 288 322 288 Q 346 288 346 308 Z" fill="#264653"/>
+  <!-- Star badge on creator -->
+  <circle cx="344" cy="268" r="10" fill="#FF4DB8"/>
+  <polygon points="344,262 346,268 352,268 347,271 349,277 344,274 339,277 341,271 336,268 342,268" fill="white"/>
+  <text x="322" y="352" font-family="Arial" font-size="11" fill="#264653" text-anchor="middle" font-weight="bold">クリエイター</text>
+
+  <!-- Center label -->
+  <text x="200" y="235" font-family="Arial" font-size="10" fill="#FF4DB8" text-anchor="middle">マネジメント</text>
+
+  <!-- Arrow indicators on lines -->
+  <polygon points="136,238 128,248 144,248" fill="#FFB3E0" transform="rotate(-35,136,243)"/>
+  <polygon points="264,238 256,248 272,248" fill="#FFB3E0" transform="rotate(35,264,243)"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Shield shadow -->
+  <path d="M 200 370 L 68 290 Q 50 260 50 210 L 50 100 Q 50 80 70 75 L 200 35 L 330 75 Q 350 80 350 100 L 350 210 Q 350 260 332 290 Z" fill="#1a3040" opacity="0.15" transform="translate(6,8)"/>
+  <!-- Shield body -->
+  <path d="M 200 365 L 68 285 Q 50 255 50 205 L 50 95 Q 50 75 70 70 L 200 30 L 330 70 Q 350 75 350 95 L 350 205 Q 350 255 332 285 Z" fill="#264653"/>
+  <!-- Shield inner highlight -->
+  <path d="M 200 340 L 85 272 Q 70 245 70 198 L 70 108 Q 70 92 88 88 L 200 55 L 312 88 Q 330 92 330 108 L 330 198 Q 330 245 315 272 Z" fill="#FF4DB8"/>
+  <!-- Shield center panel -->
+  <path d="M 200 310 L 105 256 Q 92 234 92 193 L 92 122 Q 92 108 108 105 L 200 80 L 292 105 Q 308 108 308 122 L 308 193 Q 308 234 295 256 Z" fill="#264653"/>
+
+  <!-- Lock body -->
+  <rect x="162" y="195" width="76" height="68" rx="10" fill="#FFE6F3"/>
+  <rect x="172" y="205" width="56" height="48" rx="7" fill="white"/>
+  <!-- Lock shackle -->
+  <path d="M 175 195 L 175 168 Q 175 140 200 140 Q 225 140 225 168 L 225 195" stroke="#FF4DB8" stroke-width="14" fill="none" stroke-linecap="round"/>
+  <!-- Keyhole -->
+  <circle cx="200" cy="225" r="12" fill="#FF4DB8"/>
+  <rect x="195" y="225" width="10" height="18" rx="3" fill="#FF4DB8"/>
+
+  <!-- Checkmark at bottom -->
+  <circle cx="200" cy="340" r="22" fill="#FF4DB8" opacity="0.9"/>
+  <polyline points="188,340 197,350 215,330" stroke="white" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

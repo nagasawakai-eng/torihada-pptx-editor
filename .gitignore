@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Large binaries (not needed on Railway)
+cloudflared.exe
+ngrok.exe
+
+# Local tunnel logs
+*.log
+*.log.err
+tunnel_url.txt
+
+# Local Netlify folder
+.netlify
+dist/
+
+# Backup files
+*_backup.pptx
+
+# Local config (use Railway environment variables instead)
+auth.config.json

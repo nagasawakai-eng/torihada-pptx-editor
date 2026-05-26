@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- Camera body -->
+  <rect x="48" y="130" width="220" height="160" rx="22" fill="#264653"/>
+  <!-- Camera grip bump -->
+  <rect x="48" y="155" width="40" height="70" rx="12" fill="#1a3040"/>
+  <!-- Lens housing -->
+  <circle cx="182" cy="210" r="72" fill="#1a3040"/>
+  <circle cx="182" cy="210" r="62" fill="#264653"/>
+  <circle cx="182" cy="210" r="52" fill="#1a3040"/>
+  <circle cx="182" cy="210" r="38" fill="#3d6070"/>
+  <circle cx="182" cy="210" r="26" fill="#1a1a2e"/>
+  <!-- Lens reflection -->
+  <circle cx="172" cy="200" r="8" fill="white" opacity="0.15"/>
+  <circle cx="178" cy="196" r="4" fill="white" opacity="0.2"/>
+
+  <!-- Viewfinder / top detail -->
+  <rect x="100" y="112" width="50" height="22" rx="8" fill="#1a3040"/>
+  <rect x="103" y="115" width="44" height="16" rx="6" fill="#FF4DB8" opacity="0.7"/>
+
+  <!-- Flash / light -->
+  <rect x="218" y="118" width="32" height="20" rx="6" fill="#FFE455"/>
+  <rect x="222" y="121" width="24" height="14" rx="4" fill="white" opacity="0.6"/>
+
+  <!-- Record button -->
+  <circle cx="268" cy="185" r="16" fill="#E63946"/>
+  <circle cx="268" cy="185" r="10" fill="#FF6B6B"/>
+  <!-- REC indicator -->
+  <circle cx="268" cy="151" r="6" fill="#E63946" opacity="0.8"/>
+  <text x="280" y="155" font-family="Arial" font-size="9" fill="#E63946" font-weight="bold">REC</text>
+
+  <!-- Video viewer icon (play triangle) -->
+  <rect x="130" y="152" width="32" height="24" rx="5" fill="#FF4DB8" opacity="0.8"/>
+  <polygon points="138,158 138,170 152,164" fill="white"/>
+
+  <!-- Tripod legs -->
+  <line x1="158" x2="120" y1="290" y2="368" stroke="#264653" stroke-width="10" stroke-linecap="round"/>
+  <line x1="182" x2="182" y1="290" y2="375" stroke="#264653" stroke-width="10" stroke-linecap="round"/>
+  <line x1="206" x2="244" y1="290" y2="368" stroke="#264653" stroke-width="10" stroke-linecap="round"/>
+  <!-- Tripod head -->
+  <rect x="150" y="282" width="64" height="16" rx="6" fill="#3d6070"/>
+
+  <!-- Stars / sparkles -->
+  <text x="305" y="145" font-family="Arial" font-size="24" fill="#FF4DB8">✦</text>
+  <text x="50" y="100" font-family="Arial" font-size="16" fill="#FFB3E0">✦</text>
+  <text x="310" y="320" font-family="Arial" font-size="14" fill="#FF4DB8" opacity="0.6">✦</text>
+
+  <!-- Subscriber / view count badge -->
+  <rect x="280" y="230" width="95" height="52" rx="10" fill="#FF4DB8"/>
+  <text x="327" y="250" font-family="Arial" font-size="10" fill="white" text-anchor="middle">再生数</text>
+  <text x="327" y="270" font-family="Arial" font-size="14" fill="white" text-anchor="middle" font-weight="bold">1.2M</text>
+</svg>
