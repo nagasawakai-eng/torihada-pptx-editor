@@ -209,7 +209,7 @@ app.get('/view', (req, res) => {
         <span class="slide-title-text">${title}</span>
       </div>
       <div class="slide-img-wrap">
-        <img src="/preview/${file}" alt="${title}" class="slide-img" loading="lazy">
+        <img src="/preview/${file}" alt="${title}" class="slide-img">
       </div>
     </div>`;
   }).join('');
