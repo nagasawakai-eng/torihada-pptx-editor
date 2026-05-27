@@ -209,7 +209,8 @@ app.get('/view', (req, res) => {
         <span class="slide-title-text">${title}</span>
       </div>
       <div class="slide-img-wrap">
-        <img data-src="${baseUrl}/preview/${file}" alt="${title}" class="lazy-img">
+        <div class="loading-placeholder"><div class="spinner"></div>読み込み中...</div>
+        <img data-src="/preview/${file}" alt="${title}" class="lazy-img">
       </div>
     </div>`;
   }).join('');
@@ -359,12 +360,40 @@ body {
 .slide-img-wrap {
   padding: 0;
   background: #f0f2f5;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 }
 .slide-img-wrap img {
   width: 100%;
   display: block;
   border: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
+.slide-img-wrap img.loaded {
+  opacity: 1;
+}
+.slide-img-wrap .loading-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a0aec0;
+  font-size: 13px;
+  gap: 8px;
+}
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid #e2e8f0;
+  border-top-color: #FF4DB8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* スクロールバー */
 ::-webkit-scrollbar { width: 6px; }
@@ -417,32 +446,31 @@ const observer = new IntersectionObserver(entries => {
 
 document.querySelectorAll('.slide-card').forEach(c => observer.observe(c));
 
-// 画像遅延読み込み（fetch → blob URL）
+// 画像遅延読み込み（シンプル版: img.src に直接セット）
 const imgObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (entry.isIntersecting) {
       const img = entry.target;
       const src = img.dataset.src;
-      if (src) {
-        fetch(src, {cache: 'force-cache'})
-          .then(r => r.blob())
-          .then(blob => {
-            img.src = URL.createObjectURL(blob);
-            img.removeAttribute('data-src');
-            img.style.minHeight = '';
-          })
-          .catch(() => { img.src = src; });
+      if (src && !img.src) {
+        img.src = src;
+        img.onload = () => {
+          img.classList.add('loaded');
+          const placeholder = img.parentElement.querySelector('.loading-placeholder');
+          if (placeholder) placeholder.style.display = 'none';
+        };
+        img.onerror = () => {
+          const placeholder = img.parentElement.querySelector('.loading-placeholder');
+          if (placeholder) placeholder.innerHTML = '画像を読み込めませんでした';
+        };
+        img.removeAttribute('data-src');
         imgObserver.unobserve(img);
       }
     }
   });
-}, { rootMargin: '400px' });
+}, { rootMargin: '600px' });
 
-document.querySelectorAll('img.lazy-img').forEach(img => {
-  img.style.minHeight = '180px';
-  img.style.background = '#e8ecf0';
-  imgObserver.observe(img);
-});
+document.querySelectorAll('img.lazy-img').forEach(img => imgObserver.observe(img));
 </script>
 
 </body>
