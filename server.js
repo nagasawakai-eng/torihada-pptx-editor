@@ -109,15 +109,11 @@ function accessDeniedHtml() {
 </html>`;
 }
 
-// ─── ルートアクセス制御（/view と /preview は公開）───
+// ─── ルートアクセス制御 ───
+// HTMLページはクライアント側でトークン検証するためサーバー側は制限なし
+// （URLクリーンアップ後のリロードでも正常動作するよう）
+// API エンドポイントは各ルートで個別に requireRole / requireEditor で保護
 app.use((req, res, next) => {
-  if (req.path === '/view' || req.path.startsWith('/preview/')) return next();
-  if (req.path.startsWith('/api/')) return next();
-  if (req.path.match(/\.(js|css|png|jpg|jpeg|svg|ico|woff2?)$/)) return next();
-  const token = extractToken(req);
-  const role = getRole(token);
-  if (!role) return res.status(403).send(accessDeniedHtml());
-  req.role = role;
   next();
 });
 

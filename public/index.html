@@ -1994,6 +1994,20 @@ async function initRole() {
   } catch(e) {
     currentRole = null;
   }
+  if (!currentRole) {
+    // トークンなし or 無効 → アクセス拒否画面をインラインで表示
+    document.body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;
+                  background:#f7f8fa;font-family:-apple-system,'Hiragino Sans',sans-serif;">
+        <div style="text-align:center;padding:48px 40px;background:white;border-radius:16px;
+                    box-shadow:0 4px 24px rgba(0,0,0,0.1);max-width:360px;">
+          <div style="font-size:52px;margin-bottom:16px;">🔒</div>
+          <h1 style="font-size:17px;color:#1a202c;margin-bottom:10px;font-weight:700;">招待リンクが必要です</h1>
+          <p style="font-size:13px;color:#718096;line-height:1.6;">このページにアクセスするには<br>管理者から共有リンクを受け取ってください</p>
+        </div>
+      </div>`;
+    return;
+  }
   applyRoleUI();
 }
 
