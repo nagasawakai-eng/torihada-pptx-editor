@@ -742,10 +742,12 @@ textarea.run-input.changed {
   </div>
   <div class="header-right">
     <span class="save-status" id="saveStatus"></span>
+    <span id="roleChip" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700;"></span>
     <button class="btn" style="background:#7c3aed;color:white;" onclick="openVideoReview()">🎬 動画レビュー</button>
     <button class="btn" style="background:#2b6cb0;color:white;position:relative;" onclick="openChangelog()">📋 変更履歴 <span id="changelogBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#e53e3e;color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;"></span></button>
-    <button class="btn btn-restore" onclick="restoreBackup()">元に戻す</button>
+    <button class="btn btn-restore" id="restoreBtn" onclick="restoreBackup()">元に戻す</button>
     <button class="btn" id="pdfBtn" style="background:#2d8c6e;color:white;" onclick="downloadPdf()">📄 PDFに変換</button>
+    <button class="btn" id="shareBtn" style="background:#d97706;color:white;display:none;" onclick="openShareModal()">🔗 シェア</button>
     <button class="btn btn-save" id="saveBtn" onclick="saveAll()">💾 保存する</button>
   </div>
 
@@ -779,6 +781,53 @@ textarea.run-input.changed {
       </div>
       <!-- 履歴リスト -->
       <div id="changelogList" style="overflow-y:auto;padding:16px 24px;flex:1;"></div>
+    </div>
+  </div>
+
+  <!-- シェアモーダル -->
+  <div id="shareModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:16px;width:520px;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="font-size:18px;font-weight:700;color:#1a202c;">🔗 シェアリンク管理</h2>
+        <button onclick="closeShareModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#718096;">✕</button>
+      </div>
+      <div style="padding:24px;">
+        <!-- 閲覧リンク -->
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="background:#ebf4ff;color:#2b6cb0;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;">👁 閲覧のみ</span>
+            <span style="font-size:12px;color:#718096;">スライドを見るだけ（編集不可）</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <input id="viewerLinkInput" type="text" readonly style="flex:1;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;color:#4a5568;background:#f7fafc;">
+            <button onclick="copyLink('viewer')" style="padding:9px 16px;background:#2b6cb0;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">コピー</button>
+          </div>
+        </div>
+        <!-- 編集リンク -->
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="background:#f0fff4;color:#276749;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;">✏️ 編集可</span>
+            <span style="font-size:12px;color:#718096;">スライドの編集・保存が可能</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <input id="editorLinkInput" type="text" readonly style="flex:1;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;color:#4a5568;background:#f7fafc;">
+            <button onclick="copyLink('editor')" style="padding:9px 16px;background:#276749;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">コピー</button>
+            <button onclick="regenerateLink('editor')" title="リンクを再生成" style="padding:9px 12px;background:#e2e8f0;color:#4a5568;border:none;border-radius:8px;font-size:13px;cursor:pointer;">🔄</button>
+          </div>
+        </div>
+        <!-- 管理者リンク -->
+        <div style="border-top:1px solid #e2e8f0;padding-top:16px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="background:#fff5f5;color:#c53030;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;">👑 管理者</span>
+            <span style="font-size:12px;color:#718096;">全機能 + シェアリンク管理</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <input id="adminLinkInput" type="text" readonly style="flex:1;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;color:#4a5568;background:#f7fafc;">
+            <button onclick="copyLink('admin')" style="padding:9px 16px;background:#c53030;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">コピー</button>
+          </div>
+        </div>
+        <p style="margin-top:16px;font-size:11px;color:#a0aec0;">⚠️ 編集リンク・管理者リンクは信頼できる人にのみ共有してください</p>
+      </div>
     </div>
   </div>
 </header>
@@ -1913,6 +1962,138 @@ async function deleteChangelogEntry(id) {
   await fetch(`/api/changelog/${id}`, { method: 'DELETE' });
   await renderChangelog();
 }
+
+// ====== トークン・権限管理 ======
+let currentToken = null;
+let currentRole  = null;
+
+function getToken() {
+  // URLのクエリパラメータを優先、なければlocalStorageから
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get('token');
+  if (urlToken) {
+    localStorage.setItem('torihada_token', urlToken);
+    // URLからトークンを消してきれいにする
+    const clean = window.location.pathname;
+    window.history.replaceState({}, '', clean);
+    return urlToken;
+  }
+  return localStorage.getItem('torihada_token');
+}
+
+function authHeaders() {
+  return currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {};
+}
+
+async function initRole() {
+  currentToken = getToken();
+  try {
+    const res = await fetch('/api/me', { headers: authHeaders() });
+    const { role } = await res.json();
+    currentRole = role;
+  } catch(e) {
+    currentRole = null;
+  }
+  applyRoleUI();
+}
+
+function applyRoleUI() {
+  const isViewer = currentRole === 'viewer';
+  const isAdmin  = currentRole === 'admin';
+
+  // ロールチップ表示
+  const chip = document.getElementById('roleChip');
+  if (currentRole) {
+    chip.style.display = 'inline-block';
+    if (isAdmin) {
+      chip.textContent = '👑 管理者';
+      chip.style.background = '#fff5f5';
+      chip.style.color = '#c53030';
+    } else if (currentRole === 'editor') {
+      chip.textContent = '✏️ 編集者';
+      chip.style.background = '#f0fff4';
+      chip.style.color = '#276749';
+    } else {
+      chip.textContent = '👁 閲覧のみ';
+      chip.style.background = '#ebf4ff';
+      chip.style.color = '#2b6cb0';
+    }
+  }
+
+  // 閲覧者は編集ボタンを非表示
+  if (isViewer) {
+    ['saveBtn','restoreBtn','pdfBtn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    // テキストエリアをreadonly
+    document.querySelectorAll('.shape-textarea').forEach(el => {
+      el.setAttribute('readonly', true);
+      el.style.background = '#f7fafc';
+      el.style.cursor = 'default';
+    });
+  }
+
+  // 管理者のみシェアボタンを表示
+  if (isAdmin) {
+    const shareBtn = document.getElementById('shareBtn');
+    if (shareBtn) shareBtn.style.display = 'inline-flex';
+  }
+}
+
+// ====== シェアモーダル ======
+async function openShareModal() {
+  document.getElementById('shareModal').style.display = 'flex';
+  try {
+    const res = await fetch('/api/tokens', { headers: authHeaders() });
+    const data = await res.json();
+    document.getElementById('viewerLinkInput').value = data.viewer.url;
+    document.getElementById('editorLinkInput').value = data.editor.url;
+    document.getElementById('adminLinkInput').value  = data.admin.url;
+  } catch(e) {
+    alert('リンクの取得に失敗しました');
+  }
+}
+
+function closeShareModal() {
+  document.getElementById('shareModal').style.display = 'none';
+}
+
+async function copyLink(role) {
+  const inputId = role + 'LinkInput';
+  const val = document.getElementById(inputId)?.value;
+  if (!val) return;
+  await navigator.clipboard.writeText(val);
+  const btn = document.querySelector(`button[onclick="copyLink('${role}')"]`);
+  if (btn) { const orig = btn.textContent; btn.textContent = '✅ コピー済み'; setTimeout(() => btn.textContent = orig, 2000); }
+}
+
+async function regenerateLink(role) {
+  if (!confirm(`${role === 'editor' ? '編集' : '閲覧'}リンクを再生成しますか？\n古いリンクは無効になります。`)) return;
+  try {
+    const res = await fetch('/api/tokens/regenerate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ role })
+    });
+    const { url } = await res.json();
+    document.getElementById(role + 'LinkInput').value = url;
+  } catch(e) {
+    alert('再生成に失敗しました');
+  }
+}
+
+// 初期化（既存のfetchをauthHeaders付きに上書き）
+const _origFetch = window.fetch;
+window.fetch = function(url, opts = {}) {
+  if (typeof url === 'string' && url.startsWith('/api/') && currentToken) {
+    opts.headers = { ...authHeaders(), ...(opts.headers || {}) };
+  }
+  return _origFetch(url, opts);
+};
+
+// ページ読み込み時に権限初期化
+initRole();
 
 // 初期バッジ表示
 fetch('/api/changelog').then(r=>r.json()).then(({log})=>{

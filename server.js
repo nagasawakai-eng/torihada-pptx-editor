@@ -3,10 +3,10 @@ const AdmZip = require('adm-zip');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const session = require('express-session');
+const crypto = require('crypto');
 
 const app = express();
-app.set('trust proxy', 1); // Cloudflareのヘッダーを信頼
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -17,90 +17,142 @@ app.use((req, res, next) => {
   next();
 });
 
-// ─── パスワード設定（変更する場合はここを編集） ───
-const SITE_PASSWORD = (() => {
-  const cfgPath = path.join(__dirname, 'auth.config.json');
-  if (fs.existsSync(cfgPath)) {
-    return JSON.parse(fs.readFileSync(cfgPath, 'utf8')).password;
+// ─── トークンベース認証 ───
+const AUTH_CONFIG_PATH = path.join(__dirname, 'auth.config.json');
+
+function generateToken() {
+  return crypto.randomBytes(24).toString('base64url');
+}
+
+function loadOrCreateTokens() {
+  // Railway等で環境変数が設定されている場合はそちらを優先
+  if (process.env.ADMIN_TOKEN) {
+    return {
+      admin:  process.env.ADMIN_TOKEN,
+      editor: process.env.EDITOR_TOKEN || generateToken(),
+      viewer: process.env.VIEWER_TOKEN || generateToken(),
+    };
   }
-  return 'torihada2024';
-})();
+  // ローカル: ファイルから読み込み or 新規生成
+  let cfg = {};
+  try {
+    if (fs.existsSync(AUTH_CONFIG_PATH)) {
+      cfg = JSON.parse(fs.readFileSync(AUTH_CONFIG_PATH, 'utf8'));
+    }
+  } catch(e) {}
+  if (!cfg.admin)  cfg.admin  = generateToken();
+  if (!cfg.editor) cfg.editor = generateToken();
+  if (!cfg.viewer) cfg.viewer = generateToken();
+  fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  return cfg;
+}
 
-// セッション設定
-app.use(session({
-  secret: 'torihada-pptx-secret-key-2024',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000, sameSite: 'none', secure: true } // 8時間有効・iframe対応
-}));
+const TOKENS = loadOrCreateTokens();
 
-// ログインページ
-app.get('/login', (req, res) => {
-  const err = req.query.error ? '<p style="color:#e53e3e;margin:0 0 12px">パスワードが違います</p>' : '';
-  res.send(`<!DOCTYPE html>
+function getRole(token) {
+  if (!token) return null;
+  if (token === TOKENS.admin)  return 'admin';
+  if (token === TOKENS.editor) return 'editor';
+  if (token === TOKENS.viewer) return 'viewer';
+  return null;
+}
+
+function extractToken(req) {
+  const auth = req.headers['authorization'];
+  if (auth && auth.startsWith('Bearer ')) return auth.slice(7);
+  return req.query.token || null;
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    const token = extractToken(req);
+    const role = getRole(token);
+    if (!role || (roles.length > 0 && !roles.includes(role))) {
+      if (req.path.startsWith('/api/')) {
+        return res.status(403).json({ error: '権限がありません' });
+      }
+      return res.status(403).send(accessDeniedHtml());
+    }
+    req.role = role;
+    next();
+  };
+}
+
+function requireEditor(req, res, next) {
+  return requireRole('editor', 'admin')(req, res, next);
+}
+
+function accessDeniedHtml() {
+  return `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TORIHADA 研修資料エディター</title>
+<title>アクセス拒否 - TORIHADA</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { min-height: 100vh; display: flex; align-items: center; justify-content: center;
-         background: #f7f8fa; font-family: -apple-system, 'Hiragino Sans', sans-serif; }
-  .card { background: white; border-radius: 16px; padding: 48px 40px; width: 360px;
-          box-shadow: 0 4px 24px rgba(0,0,0,0.10); }
-  .logo { font-size: 22px; font-weight: 700; color: #1a202c; margin-bottom: 6px; }
-  .sub  { font-size: 13px; color: #718096; margin-bottom: 32px; }
-  label { font-size: 13px; color: #4a5568; font-weight: 600; display: block; margin-bottom: 6px; }
-  input[type=password] { width: 100%; padding: 11px 14px; border: 1.5px solid #e2e8f0;
-                         border-radius: 8px; font-size: 15px; outline: none; transition: border .2s; }
-  input[type=password]:focus { border-color: #4299e1; }
-  button { width: 100%; margin-top: 20px; padding: 12px; background: #2b6cb0; color: white;
-           border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .2s; }
-  button:hover { background: #2c5282; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { display:flex; align-items:center; justify-content:center; min-height:100vh;
+         background:#f7f8fa; font-family:-apple-system,'Hiragino Sans',sans-serif; }
+  .card { text-align:center; padding:48px 40px; background:white; border-radius:16px;
+          box-shadow:0 4px 24px rgba(0,0,0,0.1); max-width:360px; }
+  h1 { font-size:17px; color:#1a202c; margin-bottom:10px; font-weight:700; }
+  p  { font-size:13px; color:#718096; line-height:1.6; }
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="logo">🐦 TORIHADA</div>
-  <div class="sub">研修資料エディター</div>
-  ${err}
-  <form method="POST" action="/login">
-    <label>パスワード</label>
-    <input type="password" name="password" placeholder="パスワードを入力" autofocus>
-    <button type="submit">ログイン</button>
-  </form>
+  <div style="font-size:52px;margin-bottom:16px;">🔒</div>
+  <h1>招待リンクが必要です</h1>
+  <p>このページにアクセスするには<br>管理者から共有リンクを受け取ってください</p>
 </div>
 </body>
-</html>`);
-});
-
-app.post('/login', (req, res) => {
-  if (req.body.password === SITE_PASSWORD) {
-    req.session.authenticated = true;
-    res.redirect('/');
-  } else {
-    res.redirect('/login?error=1');
-  }
-});
-
-app.get('/logout', (req, res) => {
-  req.session.destroy();
-  res.redirect('/login');
-});
-
-// 認証ミドルウェア
-function requireAuth(req, res, next) {
-  if (req.session.authenticated) return next();
-  res.redirect('/login');
+</html>`;
 }
 
-// 静的ファイルも認証必須（/view と /preview は公開）
+// ─── ルートアクセス制御（/view と /preview は公開）───
 app.use((req, res, next) => {
-  if (req.path === '/login' || req.method === 'POST' && req.path === '/login') return next();
   if (req.path === '/view' || req.path.startsWith('/preview/')) return next();
-  if (!req.session.authenticated) return res.redirect('/login');
+  if (req.path.startsWith('/api/')) return next();
+  if (req.path.match(/\.(js|css|png|jpg|jpeg|svg|ico|woff2?)$/)) return next();
+  const token = extractToken(req);
+  const role = getRole(token);
+  if (!role) return res.status(403).send(accessDeniedHtml());
+  req.role = role;
   next();
+});
+
+// ─── 現在のロール取得 API ───
+app.get('/api/me', (req, res) => {
+  const token = extractToken(req);
+  const role = getRole(token);
+  res.json({ role: role || null });
+});
+
+// ─── シェアリンク管理 API（管理者のみ） ───
+app.get('/api/tokens', requireRole('admin'), (req, res) => {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host  = req.headers['x-forwarded-host']  || req.get('host');
+  const base  = `${proto}://${host}`;
+  res.json({
+    admin:  { url: `${base}/?token=${TOKENS.admin}`,  role: 'admin'  },
+    editor: { url: `${base}/?token=${TOKENS.editor}`, role: 'editor' },
+    viewer: { url: `${base}/view`,                    role: 'viewer' },
+  });
+});
+
+app.post('/api/tokens/regenerate', requireRole('admin'), (req, res) => {
+  const { role } = req.body;
+  if (!['editor', 'viewer'].includes(role)) {
+    return res.status(400).json({ error: '無効なロールです' });
+  }
+  TOKENS[role] = generateToken();
+  if (!process.env.ADMIN_TOKEN) {
+    try { fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(TOKENS, null, 2)); } catch(e) {}
+  }
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host  = req.headers['x-forwarded-host']  || req.get('host');
+  const base  = `${proto}://${host}`;
+  res.json({ token: TOKENS[role], url: `${base}/?token=${TOKENS[role]}` });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -616,7 +668,7 @@ app.get('/api/slide-positions/:slideNum', (req, res) => {
 });
 
 // API: 要素ポジション更新
-app.post('/api/update-positions', (req, res) => {
+app.post('/api/update-positions', requireEditor, (req, res) => {
   try {
     const { entryName, updates } = req.body;
     if (!fs.existsSync(BACKUP_PATH)) fs.copyFileSync(PPTX_PATH, BACKUP_PATH);
@@ -640,7 +692,7 @@ app.get('/api/changelog', (req, res) => {
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.post('/api/changelog', (req, res) => {
+app.post('/api/changelog', requireEditor, (req, res) => {
   try {
     const { slide, category, description } = req.body;
     const log = fs.existsSync(CHANGELOG_PATH)
@@ -659,7 +711,7 @@ app.post('/api/changelog', (req, res) => {
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.delete('/api/changelog/:id', (req, res) => {
+app.delete('/api/changelog/:id', requireEditor, (req, res) => {
   try {
     const id = parseInt(req.params.id);
     let log = fs.existsSync(CHANGELOG_PATH)
@@ -703,7 +755,7 @@ app.get('/api/slides', (req, res) => {
 });
 
 // API: 変更を保存
-app.post('/api/save', (req, res) => {
+app.post('/api/save', requireEditor, (req, res) => {
   try {
     const { edits } = req.body;
 
@@ -722,7 +774,7 @@ app.post('/api/save', (req, res) => {
 });
 
 // API: バックアップから復元
-app.post('/api/restore', (req, res) => {
+app.post('/api/restore', requireEditor, (req, res) => {
   try {
     if (!fs.existsSync(BACKUP_PATH)) {
       return res.status(404).json({ success: false, error: 'バックアップがありません' });
@@ -771,7 +823,7 @@ app.get('/api/voicevox/speakers', async (req, res) => {
 });
 
 // テキスト→WAV（audio_query + synthesis を一括）
-app.post('/api/voicevox/audio', async (req, res) => {
+app.post('/api/voicevox/audio', requireEditor, async (req, res) => {
   try {
     const { text, speaker, speedScale, intonationScale, pitchScale,
             pauseLengthScale, prePhonemeLength, postPhonemeLength } = req.body;
