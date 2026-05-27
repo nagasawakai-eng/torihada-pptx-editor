@@ -136,7 +136,7 @@ app.get('/api/tokens', requireRole('admin'), (req, res) => {
   res.json({
     admin:  { url: `${base}/?token=${TOKENS.admin}`,  role: 'admin'  },
     editor: { url: `${base}/?token=${TOKENS.editor}`, role: 'editor' },
-    viewer: { url: `${base}/view`,                    role: 'viewer' },
+    viewer: { url: `${base}/?token=${TOKENS.viewer}`,  role: 'viewer' },
   });
 });
 
