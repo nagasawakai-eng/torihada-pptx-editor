@@ -153,6 +153,122 @@ app.post('/api/tokens/regenerate', requireRole('admin'), (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ─── 週設定 ───
+const WEEKS_CONFIG_PATH = path.join(__dirname, 'weeks.config.json');
+
+function loadWeeksConfig() {
+  try {
+    if (fs.existsSync(WEEKS_CONFIG_PATH)) {
+      return JSON.parse(fs.readFileSync(WEEKS_CONFIG_PATH, 'utf8'));
+    }
+  } catch(e) {}
+  return { weeks: [{ id: 'week1', label: '第1週', file: 'TORIHADA_第1週_研修資料_v2.pptx' }] };
+}
+
+function resolveWeekPaths(weekId) {
+  const config = loadWeeksConfig();
+  const week = config.weeks.find(w => w.id === weekId);
+  if (!week) return null;
+  const pptxPath = week.file ? path.join(__dirname, week.file) : null;
+  const exists   = pptxPath ? fs.existsSync(pptxPath) : false;
+  return {
+    week,
+    pptxPath,
+    exists,
+    previewDir:    path.join(__dirname, 'preview', weekId),
+    backupPath:    pptxPath ? pptxPath.replace(/\.pptx$/i, '_backup.pptx') : null,
+    changelogPath: path.join(__dirname, weekId === 'week1' ? 'change_log.json' : `change_log_${weekId}.json`),
+  };
+}
+
+function getWeekId(req) {
+  return req.query.weekId || (req.body && req.body.weekId) || 'week1';
+}
+
+// ─── 週一覧 API ───
+app.get('/api/weeks', (req, res) => {
+  const config = loadWeeksConfig();
+  const weeks = config.weeks.map(w => {
+    const pptxPath   = w.file ? path.join(__dirname, w.file) : null;
+    const previewDir = path.join(__dirname, 'preview', w.id);
+    const hasFile    = pptxPath ? fs.existsSync(pptxPath) : false;
+    let previewCount = 0;
+    try { previewCount = fs.readdirSync(previewDir).filter(f => /\.(png|jpg)$/i.test(f)).length; } catch(e) {}
+    return { ...w, hasFile, previewCount };
+  });
+  res.json({ success: true, weeks });
+});
+
+// ─── PPTXファイルアップロード（管理者のみ） ───
+app.post('/api/weeks/:weekId/upload',
+  requireRole('admin'),
+  express.raw({ type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', limit: '200mb' }),
+  (req, res) => {
+    const { weekId } = req.params;
+    const config = loadWeeksConfig();
+    const week = config.weeks.find(w => w.id === weekId);
+    if (!week) return res.status(404).json({ error: '週が見つかりません' });
+    const filename = `TORIHADA_${week.label}_研修資料.pptx`;
+    const destPath = path.join(__dirname, filename);
+    try {
+      fs.writeFileSync(destPath, req.body);
+      // weeks.config.json を更新
+      week.file = filename;
+      fs.writeFileSync(WEEKS_CONFIG_PATH, JSON.stringify(config, null, 2));
+      res.json({ success: true, file: filename });
+    } catch(e) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+// ─── プレビュー生成（管理者のみ） ───
+app.post('/api/weeks/:weekId/generate-preview', requireRole('admin'), (req, res) => {
+  const { weekId } = req.params;
+  const ctx = resolveWeekPaths(weekId);
+  if (!ctx || !ctx.pptxPath || !ctx.exists) {
+    return res.status(404).json({ error: 'PPTXファイルがありません' });
+  }
+  const soffice = process.platform === 'win32'
+    ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
+    : 'soffice';
+  const { execFile } = require('child_process');
+  const os = require('os');
+  const tmpDir = path.join(os.tmpdir(), `preview_gen_${weekId}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const pptxName = path.basename(ctx.pptxPath);
+  const pdfName  = pptxName.replace(/\.pptx$/i, '.pdf');
+  const pdfPath  = path.join(tmpDir, pdfName);
+
+  execFile(soffice, ['--headless', '--convert-to', 'pdf', '--outdir', tmpDir, ctx.pptxPath],
+    { timeout: 120000 }, (err) => {
+      if (err) return res.status(500).json({ error: 'PDF変換失敗: ' + err.message });
+      if (!fs.existsSync(pdfPath)) return res.status(500).json({ error: 'PDFが生成されませんでした' });
+      fs.mkdirSync(ctx.previewDir, { recursive: true });
+      // 古いプレビューを削除
+      try { fs.readdirSync(ctx.previewDir).forEach(f => fs.unlinkSync(path.join(ctx.previewDir, f))); } catch(e) {}
+      const outPrefix = path.join(ctx.previewDir, 'slide');
+      execFile('pdftoppm', ['-png', '-r', '150', pdfPath, outPrefix],
+        { timeout: 180000 }, (err2) => {
+          try { fs.rmSync(tmpDir, { recursive: true }); } catch(e) {}
+          if (err2) return res.status(500).json({ error: '画像変換失敗: ' + err2.message });
+          // ファイル名を slide_01.png 形式にリネーム
+          try {
+            const files = fs.readdirSync(ctx.previewDir).sort();
+            files.forEach(f => {
+              const m = f.match(/slide-(\d+)\.png$/i);
+              if (m) {
+                const n = parseInt(m[1]);
+                const newName = `slide_${String(n).padStart(2, '0')}.png`;
+                fs.renameSync(path.join(ctx.previewDir, f), path.join(ctx.previewDir, newName));
+              }
+            });
+          } catch(e) {}
+          res.json({ success: true });
+        });
+    });
+});
+
 const PREVIEW_DIR = process.env.PREVIEW_DIR || path.join(__dirname, 'preview');
 
 // ─── HTMLスライドビューワー（認証不要・Google Sites対応） ───
@@ -420,9 +536,20 @@ document.querySelectorAll('.slide-card').forEach(c => observer.observe(c));
 </html>`);
 });
 
-// スライドプレビュー画像を配信（クロスオリジン対応）
+// スライドプレビュー画像を配信（週別サブディレクトリ対応）
+app.get('/preview/:weekId/:filename', (req, res) => {
+  const filePath = path.join(__dirname, 'preview', req.params.weekId, req.params.filename);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send('not found');
+  }
+});
+// 後方互換: /preview/:filename → /preview/week1/:filename
 app.get('/preview/:filename', (req, res) => {
-  const filePath = path.join(PREVIEW_DIR, req.params.filename);
+  const filePath = path.join(__dirname, 'preview', 'week1', req.params.filename);
   if (fs.existsSync(filePath)) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -432,8 +559,9 @@ app.get('/preview/:filename', (req, res) => {
   }
 });
 
-const PPTX_PATH = process.env.PPTX_PATH || path.join(__dirname, 'TORIHADA_第1週_研修資料_v2.pptx');
-const BACKUP_PATH = PPTX_PATH.replace('.pptx', '_backup.pptx');
+// デフォルト(week1)パス — /view と PDF等の一部で使用
+const PPTX_PATH   = process.env.PPTX_PATH   || path.join(__dirname, 'TORIHADA_第1週_研修資料_v2.pptx');
+const BACKUP_PATH = PPTX_PATH.replace(/\.pptx$/i, '_backup.pptx');
 
 // PPTXからスライドテキストを解析
 function parsePptx(filePath) {
@@ -624,10 +752,12 @@ function patchElementPositions(filePath, entryName, updates) {
 
 // API: 要素ポジション取得
 app.get('/api/slide-positions/:slideNum', (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
+  if (!ctx || !ctx.pptxPath || !ctx.exists) return res.status(404).json({ success: false, error: 'PPTXファイルがありません' });
   try {
     const slideNum = parseInt(req.params.slideNum);
     const entryName = `ppt/slides/slide${slideNum}.xml`;
-    const zip = new AdmZip(PPTX_PATH);
+    const zip = new AdmZip(ctx.pptxPath);
     const entry = zip.getEntry(entryName);
     if (!entry) return res.status(404).json({ success: false, error: 'slide not found' });
     const xml = entry.getData().toString('utf8');
@@ -640,11 +770,13 @@ app.get('/api/slide-positions/:slideNum', (req, res) => {
 
 // API: 要素ポジション更新
 app.post('/api/update-positions', requireEditor, (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
+  if (!ctx || !ctx.pptxPath || !ctx.exists) return res.status(404).json({ success: false, error: 'PPTXファイルがありません' });
   try {
     const { entryName, updates } = req.body;
-    if (!fs.existsSync(BACKUP_PATH)) fs.copyFileSync(PPTX_PATH, BACKUP_PATH);
-    const buf = patchElementPositions(PPTX_PATH, entryName, updates);
-    fs.writeFileSync(PPTX_PATH, buf);
+    if (!fs.existsSync(ctx.backupPath)) fs.copyFileSync(ctx.pptxPath, ctx.backupPath);
+    const buf = patchElementPositions(ctx.pptxPath, entryName, updates);
+    fs.writeFileSync(ctx.pptxPath, buf);
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ success: false, error: e.message });
@@ -652,22 +784,22 @@ app.post('/api/update-positions', requireEditor, (req, res) => {
 });
 
 // ────── 変更履歴 ──────
-const CHANGELOG_PATH = path.join(__dirname, 'change_log.json');
-
 app.get('/api/changelog', (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
   try {
-    const log = fs.existsSync(CHANGELOG_PATH)
-      ? JSON.parse(fs.readFileSync(CHANGELOG_PATH, 'utf8'))
+    const log = fs.existsSync(ctx.changelogPath)
+      ? JSON.parse(fs.readFileSync(ctx.changelogPath, 'utf8'))
       : [];
     res.json({ success: true, log });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post('/api/changelog', requireEditor, (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
   try {
     const { slide, category, description } = req.body;
-    const log = fs.existsSync(CHANGELOG_PATH)
-      ? JSON.parse(fs.readFileSync(CHANGELOG_PATH, 'utf8'))
+    const log = fs.existsSync(ctx.changelogPath)
+      ? JSON.parse(fs.readFileSync(ctx.changelogPath, 'utf8'))
       : [];
     const now = new Date();
     const entry = {
@@ -677,19 +809,20 @@ app.post('/api/changelog', requireEditor, (req, res) => {
       slide, category, description
     };
     log.unshift(entry);
-    fs.writeFileSync(CHANGELOG_PATH, JSON.stringify(log, null, 2), 'utf8');
+    fs.writeFileSync(ctx.changelogPath, JSON.stringify(log, null, 2), 'utf8');
     res.json({ success: true, entry });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.delete('/api/changelog/:id', requireEditor, (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
   try {
     const id = parseInt(req.params.id);
-    let log = fs.existsSync(CHANGELOG_PATH)
-      ? JSON.parse(fs.readFileSync(CHANGELOG_PATH, 'utf8'))
+    let log = fs.existsSync(ctx.changelogPath)
+      ? JSON.parse(fs.readFileSync(ctx.changelogPath, 'utf8'))
       : [];
     log = log.filter(e => e.id !== id);
-    fs.writeFileSync(CHANGELOG_PATH, JSON.stringify(log, null, 2), 'utf8');
+    fs.writeFileSync(ctx.changelogPath, JSON.stringify(log, null, 2), 'utf8');
     res.json({ success: true });
   } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
@@ -717,8 +850,12 @@ app.post('/api/scripts', (req, res) => {
 
 // API: スライド一覧取得
 app.get('/api/slides', (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
+  if (!ctx || !ctx.pptxPath || !ctx.exists) {
+    return res.json({ success: false, error: 'PPTXファイルがありません', slides: [] });
+  }
   try {
-    const slides = parsePptx(PPTX_PATH);
+    const slides = parsePptx(ctx.pptxPath);
     res.json({ success: true, slides });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -727,17 +864,13 @@ app.get('/api/slides', (req, res) => {
 
 // API: 変更を保存
 app.post('/api/save', requireEditor, (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
+  if (!ctx || !ctx.pptxPath || !ctx.exists) return res.status(404).json({ success: false, error: 'PPTXファイルがありません' });
   try {
     const { edits } = req.body;
-
-    // バックアップ作成（初回のみ）
-    if (!fs.existsSync(BACKUP_PATH)) {
-      fs.copyFileSync(PPTX_PATH, BACKUP_PATH);
-    }
-
-    const newPptxBuffer = applyEdits(PPTX_PATH, edits);
-    fs.writeFileSync(PPTX_PATH, newPptxBuffer);
-
+    if (!fs.existsSync(ctx.backupPath)) fs.copyFileSync(ctx.pptxPath, ctx.backupPath);
+    const newPptxBuffer = applyEdits(ctx.pptxPath, edits);
+    fs.writeFileSync(ctx.pptxPath, newPptxBuffer);
     res.json({ success: true, message: '保存しました' });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -746,11 +879,13 @@ app.post('/api/save', requireEditor, (req, res) => {
 
 // API: バックアップから復元
 app.post('/api/restore', requireEditor, (req, res) => {
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
+  if (!ctx || !ctx.pptxPath) return res.status(404).json({ success: false, error: 'PPTXファイルがありません' });
   try {
-    if (!fs.existsSync(BACKUP_PATH)) {
+    if (!fs.existsSync(ctx.backupPath)) {
       return res.status(404).json({ success: false, error: 'バックアップがありません' });
     }
-    fs.copyFileSync(BACKUP_PATH, PPTX_PATH);
+    fs.copyFileSync(ctx.backupPath, ctx.pptxPath);
     res.json({ success: true, message: '元の状態に復元しました' });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -834,26 +969,25 @@ const os = require('os');
 
 // ─── PDF ダウンロード ───
 app.get('/download-pdf', (req, res) => {
-  // LibreOffice のパスを OS で切り替え
+  const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
+  if (!ctx || !ctx.pptxPath || !ctx.exists) {
+    return res.status(404).json({ error: 'PPTXファイルがありません' });
+  }
   const soffice = process.platform === 'win32'
     ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
     : 'soffice';
 
-  const outDir = os.tmpdir();
-  const pptxName = path.basename(PPTX_PATH);
+  const outDir   = os.tmpdir();
+  const pptxName = path.basename(ctx.pptxPath);
   const pdfName  = pptxName.replace(/\.pptx$/i, '.pdf');
   const pdfPath  = path.join(outDir, pdfName);
 
-  // 既存の古いPDFを削除
   if (fs.existsSync(pdfPath)) {
     try { fs.unlinkSync(pdfPath); } catch(e) {}
   }
 
   execFile(soffice, [
-    '--headless',
-    '--convert-to', 'pdf',
-    '--outdir', outDir,
-    PPTX_PATH
+    '--headless', '--convert-to', 'pdf', '--outdir', outDir, ctx.pptxPath
   ], { timeout: 60000 }, (err) => {
     if (err) {
       console.error('PDF変換エラー:', err);
@@ -867,9 +1001,7 @@ app.get('/download-pdf', (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${downloadName}`);
     const stream = fs.createReadStream(pdfPath);
     stream.pipe(res);
-    stream.on('close', () => {
-      try { fs.unlinkSync(pdfPath); } catch(e) {}
-    });
+    stream.on('close', () => { try { fs.unlinkSync(pdfPath); } catch(e) {} });
   });
 });
 

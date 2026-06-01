@@ -17,6 +17,50 @@ body {
   flex-direction: column;
 }
 
+/* ====== 週タブ ====== */
+.week-tab-bar {
+  background: #f0f2f5;
+  border-bottom: 2px solid #e2e8f0;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 44px;
+}
+.week-tab {
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #718096;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+}
+.week-tab:hover:not(:disabled) { background: #e2e8f0; color: #1a1a2e; }
+.week-tab.active {
+  background: white;
+  color: #e94560;
+  box-shadow: 0 -2px 0 #e94560 inset;
+}
+.week-tab:disabled { opacity: 0.45; cursor: not-allowed; }
+.week-badge-new {
+  font-size: 9px; font-weight: 800;
+  background: #e94560; color: white;
+  padding: 1px 5px; border-radius: 8px;
+}
+.week-badge-ready {
+  font-size: 9px; font-weight: 700;
+  background: #48bb78; color: white;
+  padding: 1px 5px; border-radius: 8px;
+}
+
 /* ====== ヘッダー ====== */
 header {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -784,6 +828,27 @@ textarea.run-input.changed {
     </div>
   </div>
 
+  <!-- PPTXアップロードモーダル（管理者のみ） -->
+  <div id="uploadModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:16px;width:460px;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+      <div style="padding:20px 24px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="font-size:17px;font-weight:700;color:#1a202c;">📤 <span id="uploadWeekLabel"></span> PPTXアップロード</h2>
+        <button onclick="closeUploadModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#718096;">✕</button>
+      </div>
+      <div style="padding:24px;">
+        <input type="hidden" id="uploadWeekId">
+        <p style="font-size:13px;color:#718096;margin-bottom:16px;">PPTXファイルをアップロードすると、自動でプレビュー画像が生成されます。</p>
+        <input type="file" id="uploadFileInput" accept=".pptx"
+          style="width:100%;padding:12px;border:2px dashed #e2e8f0;border-radius:10px;font-size:13px;cursor:pointer;">
+        <div id="uploadStatus" style="margin-top:12px;font-size:13px;color:#718096;min-height:20px;"></div>
+        <div style="display:flex;gap:8px;margin-top:20px;">
+          <button onclick="submitUpload()" style="flex:1;padding:11px;background:#e94560;color:white;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;">アップロード & プレビュー生成</button>
+          <button onclick="closeUploadModal()" style="padding:11px 18px;background:#f7fafc;border:1.5px solid #e2e8f0;border-radius:9px;font-size:13px;cursor:pointer;font-weight:600;">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- シェアモーダル -->
   <div id="shareModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
     <div style="background:white;border-radius:16px;width:520px;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
@@ -831,6 +896,11 @@ textarea.run-input.changed {
     </div>
   </div>
 </header>
+
+<!-- 週タブバー -->
+<div class="week-tab-bar" id="weekTabBar">
+  <!-- JS で動的に生成 -->
+</div>
 
 <div class="layout">
 
@@ -906,13 +976,62 @@ let allSlides = [];
 let currentSlideIdx = 0;
 let pendingChanges = {};   // key: "slideIdx-shapeIdx-paraIdx-runIdx" → newText
 let originalValues = {};   // 元テキスト
+let currentWeekId  = 'week1';  // 現在表示中の週
+
+// ====== 週タブ ======
+async function loadWeekTabs() {
+  try {
+    const res  = await fetch('/api/weeks');
+    const data = await res.json();
+    if (!data.success) return;
+    const bar = document.getElementById('weekTabBar');
+    bar.innerHTML = data.weeks.map(w => {
+      const isActive = w.id === currentWeekId;
+      const badge = w.hasFile
+        ? `<span class="week-badge-ready">●</span>`
+        : `<span class="week-badge-new">準備中</span>`;
+      const canAccess = w.hasFile || currentRole === 'admin';
+      return `<button class="week-tab${isActive ? ' active' : ''}"
+        onclick="${w.hasFile ? `switchWeek('${w.id}')` : `openUploadModal('${w.id}')`}"
+        ${!canAccess ? 'disabled' : ''}
+        title="${w.hasFile ? w.label : w.label + ' (クリックしてアップロード)'}">
+        ${w.label} ${badge}
+      </button>`;
+    }).join('');
+  } catch(e) { /* タブ取得失敗は無視 */ }
+}
+
+async function switchWeek(weekId) {
+  if (weekId === currentWeekId) return;
+  currentWeekId = weekId;
+  // 未保存の変更をリセット
+  pendingChanges = {};
+  originalValues = {};
+  updateHeaderBadge();
+  // タブ表示更新
+  await loadWeekTabs();
+  // スライド再読み込み
+  await loadSlides();
+}
 
 // ====== 初期ロード ======
 async function loadSlides() {
+  document.getElementById('loadingIndicator').style.display = 'block';
+  document.getElementById('loadingIndicator').innerHTML = '⏳ 読み込み中...';
+  document.getElementById('slideEditorArea').style.display = 'none';
   try {
-    const res = await fetch('/api/slides');
+    const res = await fetch(`/api/slides?weekId=${currentWeekId}`);
     const data = await res.json();
-    if (!data.success) throw new Error(data.error);
+    if (!data.success) {
+      document.getElementById('loadingIndicator').innerHTML =
+        `<div style="color:#a0aec0;text-align:center;padding:40px 0;">
+          <div style="font-size:40px;margin-bottom:12px;">📁</div>
+          <div style="font-weight:600;margin-bottom:8px;">PPTXファイルがありません</div>
+          <div style="font-size:12px;">${currentRole === 'admin' ? '下のアップロードボタンから追加してください' : '管理者にPPTXファイルの追加を依頼してください'}</div>
+          ${currentRole === 'admin' ? `<button onclick="openUploadModal('${currentWeekId}')" style="margin-top:16px;padding:8px 20px;background:#e94560;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">📤 PPTXをアップロード</button>` : ''}
+        </div>`;
+      return;
+    }
     allSlides = data.slides;
     renderSidebar();
     document.getElementById('loadingIndicator').style.display = 'none';
@@ -1037,7 +1156,7 @@ let zoomPct = 100;
 function updatePreview(idx) {
   const slide = allSlides[idx];
   const num = String(slide.slideNum).padStart(2, '0');
-  const imgSrc = `/preview/slide_${num}.png`;
+  const imgSrc = `/preview/${currentWeekId}/slide_${num}.png`;
 
   document.getElementById('previewSlideNum').textContent = `Slide ${slide.slideNum}`;
   const wrap = document.getElementById('previewImgWrap');
@@ -1273,9 +1392,9 @@ async function saveAll() {
   saveBtn.textContent = '保存中...';
 
   try {
-    const res = await fetch('/api/save', {
+    const res = await fetch(`/api/save?weekId=${currentWeekId}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ edits })
+      body: JSON.stringify({ edits, weekId: currentWeekId })
     });
     const data = await res.json();
     if (data.success) {
@@ -1311,7 +1430,7 @@ async function saveAll() {
 async function restoreBackup() {
   if (!confirm('元のファイルに戻しますか？\n保存済みの変更はすべて消えます。')) return;
   try {
-    const res = await fetch('/api/restore', { method: 'POST' });
+    const res = await fetch(`/api/restore?weekId=${currentWeekId}`, { method: 'POST' });
     const data = await res.json();
     if (data.success) {
       showStatus('✅ 復元しました。再読み込みします...', 'success');
@@ -1392,7 +1511,7 @@ async function loadLayoutElements() {
   const slide = allSlides[currentSlideIdx];
   if (!slide) return;
   try {
-    const res = await fetch(`/api/slide-positions/${slide.slideNum}`);
+    const res = await fetch(`/api/slide-positions/${slide.slideNum}?weekId=${currentWeekId}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
     layoutElements = data.elements;
@@ -1570,7 +1689,7 @@ async function saveLayoutEdits() {
   const btn = document.getElementById('layoutSaveBtn');
   btn.textContent = '保存中...'; btn.disabled = true;
   try {
-    const res = await fetch('/api/update-positions', {
+    const res = await fetch(`/api/update-positions?weekId=${currentWeekId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ entryName: layoutEntryName, updates: layoutElements })
@@ -1897,7 +2016,8 @@ function scrollSidebarToActive() {
   if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-loadSlides();
+// 週タブは applyRoleUI() 後に呼ばれる (initRole 内)
+// loadSlides() は loadWeekTabs() 経由で呼ばれる
 
 // ══════════════════════════════
 // 変更履歴
@@ -1911,7 +2031,7 @@ function closeChangelog() {
 }
 
 async function renderChangelog() {
-  const res = await fetch('/api/changelog');
+  const res = await fetch(`/api/changelog?weekId=${currentWeekId}`);
   const { log } = await res.json();
   const list = document.getElementById('changelogList');
   // バッジ更新
@@ -1946,7 +2066,7 @@ async function addChangelogEntry() {
   const category = document.getElementById('clCategory').value.trim() || '修正';
   const description = document.getElementById('clDesc').value.trim();
   if (!description) { alert('変更内容を入力してください'); return; }
-  await fetch('/api/changelog', {
+  await fetch(`/api/changelog?weekId=${currentWeekId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ slide, category, description })
@@ -1959,7 +2079,7 @@ async function addChangelogEntry() {
 
 async function deleteChangelogEntry(id) {
   if (!confirm('この履歴を削除しますか？')) return;
-  await fetch(`/api/changelog/${id}`, { method: 'DELETE' });
+  await fetch(`/api/changelog/${id}?weekId=${currentWeekId}`, { method: 'DELETE' });
   await renderChangelog();
 }
 
@@ -2009,6 +2129,54 @@ async function initRole() {
     return;
   }
   applyRoleUI();
+  // 週タブとスライドを初期ロード
+  await loadWeekTabs();
+  await loadSlides();
+}
+
+// ====== アップロードモーダル（管理者のみ） ======
+function openUploadModal(weekId) {
+  const modal = document.getElementById('uploadModal');
+  document.getElementById('uploadWeekId').value = weekId;
+  document.getElementById('uploadWeekLabel').textContent = weekId.replace('week','第') + '週';
+  document.getElementById('uploadFileInput').value = '';
+  document.getElementById('uploadStatus').textContent = '';
+  modal.style.display = 'flex';
+}
+function closeUploadModal() {
+  document.getElementById('uploadModal').style.display = 'none';
+}
+
+async function submitUpload() {
+  const weekId = document.getElementById('uploadWeekId').value;
+  const file   = document.getElementById('uploadFileInput').files[0];
+  const status = document.getElementById('uploadStatus');
+  if (!file) { status.textContent = 'ファイルを選択してください'; return; }
+  if (!file.name.match(/\.pptx$/i)) { status.textContent = '.pptxファイルを選択してください'; return; }
+
+  status.textContent = '⏳ アップロード中...';
+  try {
+    const buf = await file.arrayBuffer();
+    const res = await fetch(`/api/weeks/${weekId}/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+      body: buf
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    status.textContent = '✅ アップロード完了！プレビューを生成中...';
+    // プレビュー生成
+    const prev = await fetch(`/api/weeks/${weekId}/generate-preview`, { method: 'POST' });
+    const prevData = await prev.json();
+    if (prevData.success) {
+      status.textContent = '✅ 完了！タブが使えるようになりました。';
+      setTimeout(() => { closeUploadModal(); switchWeek(weekId); }, 1500);
+    } else {
+      status.textContent = '⚠ アップロード成功（プレビュー生成: ' + (prevData.error || '失敗') + '）';
+    }
+  } catch(e) {
+    status.textContent = '❌ エラー: ' + e.message;
+  }
 }
 
 function applyRoleUI() {
@@ -2133,7 +2301,7 @@ window.fetch = function(url, opts = {}) {
 initRole();
 
 // 初期バッジ表示
-fetch('/api/changelog').then(r=>r.json()).then(({log})=>{
+fetch(`/api/changelog?weekId=${currentWeekId}`).then(r=>r.json()).then(({log})=>{
   const badge = document.getElementById('changelogBadge');
   if(log && log.length>0){ badge.style.display='flex'; badge.textContent=log.length; }
 });
@@ -2146,7 +2314,7 @@ async function downloadPdf() {
   btn.disabled = true;
   btn.style.opacity = '0.7';
   try {
-    const res = await fetch('/download-pdf');
+    const res = await fetch(`/download-pdf?weekId=${currentWeekId}`);
     if (!res.ok) {
       const { error } = await res.json().catch(() => ({ error: 'サーバーエラー' }));
       alert('PDF変換に失敗しました: ' + error);
