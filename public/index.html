@@ -80,12 +80,14 @@ body {
 }
 .week-badge-ready { display: none; }
 .week-tab-delete {
-  width: 16px; height: 16px;
-  background: rgba(0,0,0,0.12); border: none;
-  border-radius: 50%; color: #555; font-size: 11px; line-height: 1;
+  width: 14px; height: 14px;
+  background: rgba(0,0,0,0.2); border: none;
+  border-radius: 50%; color: #333; font-size: 10px; line-height: 1;
   cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-  margin-left: 2px; transition: background 0.15s;
+  margin-left: 2px; transition: all 0.15s;
+  opacity: 0; pointer-events: none;
 }
+.week-tab:hover .week-tab-delete { opacity: 1; pointer-events: auto; }
 .week-tab-delete:hover { background: #e94560; color: white; }
 .week-tab-add {
   padding: 6px 12px; border: 1.5px dashed #cbd5e0;
