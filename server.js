@@ -153,6 +153,8 @@ app.post('/api/tokens/regenerate', requireRole('admin'), (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+const PREVIEW_DIR = process.env.PREVIEW_DIR || path.join(__dirname, 'preview');
+
 // ─── 週設定 ───
 const WEEKS_CONFIG_PATH = path.join(__dirname, 'weeks.config.json');
 
@@ -306,8 +308,6 @@ app.post('/api/weeks/:weekId/generate-preview', requireRole('admin'), (req, res)
         });
     });
 });
-
-const PREVIEW_DIR = process.env.PREVIEW_DIR || path.join(__dirname, 'preview');
 
 // ─── HTMLスライドビューワー（認証不要・Google Sites対応） ───
 app.get('/view', (req, res) => {
@@ -574,27 +574,34 @@ document.querySelectorAll('.slide-card').forEach(c => observer.observe(c));
 </html>`);
 });
 
-// スライドプレビュー画像を配信（週別サブディレクトリ対応）
+// スライドプレビュー画像を配信（週別 → 旧パスの順でフォールバック）
+function sendPreview(res, ...candidates) {
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      return res.sendFile(p);
+    }
+  }
+  res.status(404).send('not found');
+}
+
 app.get('/preview/:weekId/:filename', (req, res) => {
-  const filePath = path.join(__dirname, 'preview', req.params.weekId, req.params.filename);
-  if (fs.existsSync(filePath)) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.sendFile(filePath);
-  } else {
-    res.status(404).send('not found');
-  }
+  const { weekId, filename } = req.params;
+  sendPreview(res,
+    path.join(__dirname, 'preview', weekId, filename),          // 新パス: preview/week1/slide_01.png
+    path.join(__dirname, 'preview', filename),                   // 旧パス: preview/slide_01.png (既存ファイル)
+    path.join(PREVIEW_DIR || path.join(__dirname,'preview'), filename) // env var指定パス
+  );
 });
-// 後方互換: /preview/:filename → /preview/week1/:filename
+
 app.get('/preview/:filename', (req, res) => {
-  const filePath = path.join(__dirname, 'preview', 'week1', req.params.filename);
-  if (fs.existsSync(filePath)) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.sendFile(filePath);
-  } else {
-    res.status(404).send('not found');
-  }
+  const { filename } = req.params;
+  sendPreview(res,
+    path.join(__dirname, 'preview', 'week1', filename),          // 新パス
+    path.join(__dirname, 'preview', filename),                   // 旧パス
+    path.join(PREVIEW_DIR || path.join(__dirname,'preview'), filename)
+  );
 });
 
 // デフォルト(week1)パス — /view と PDF等の一部で使用
