@@ -18,48 +18,67 @@ body {
 }
 
 /* ====== 週タブ ====== */
+:root {
+  --week1-color: #FFB3C8;
+  --week2-color: #A8D4F5;
+  --week3-color: #8FB356;
+  --week4-color: #F9F46B;
+  --week1-dark:  #d4607a;
+  --week2-dark:  #3a82c4;
+  --week3-dark:  #5a7a2a;
+  --week4-dark:  #b8a800;
+}
 .week-tab-bar {
-  background: #f0f2f5;
-  border-bottom: 2px solid #e2e8f0;
-  padding: 0 20px;
+  background: #1a1a2e;
+  border-bottom: none;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  height: 38px;
+  overflow-x: auto;
+}
+.week-tab-bar::-webkit-scrollbar { height: 3px; }
+.week-tab-bar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+.week-tab {
+  padding: 4px 10px;
+  border: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: #4a5568;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s;
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
-  height: 44px;
-}
-.week-tab {
-  padding: 8px 16px;
-  border: none;
-  background: none;
-  font-size: 13px;
-  font-weight: 600;
-  color: #718096;
-  cursor: pointer;
-  border-radius: 8px 8px 0 0;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.75;
 }
-.week-tab:hover:not(:disabled) { background: #e2e8f0; color: #1a1a2e; }
-.week-tab.active {
-  background: white;
-  color: #e94560;
-  box-shadow: 0 -2px 0 #e94560 inset;
+.week-tab:hover:not(:disabled) { opacity: 1; filter: brightness(1.05); }
+.week-tab.active { opacity: 1; box-shadow: 0 0 0 2px white; color: #1a1a2e; }
+.week-tab:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* 週ごとの色 */
+.week-tab[data-week="week1"] { background: var(--week1-color); }
+.week-tab[data-week="week2"] { background: var(--week2-color); }
+.week-tab[data-week="week3"] { background: var(--week3-color); color: white; }
+.week-tab[data-week="week4"] { background: var(--week4-color); }
+/* 4週以降は自動でグレー */
+.week-tab[data-week]:not([data-week="week1"]):not([data-week="week2"]):not([data-week="week3"]):not([data-week="week4"]) {
+  background: #cbd5e0;
 }
-.week-tab:disabled { opacity: 0.45; cursor: not-allowed; }
+
 .week-badge-new {
-  font-size: 9px; font-weight: 800;
-  background: #e94560; color: white;
-  padding: 1px 5px; border-radius: 8px;
+  font-size: 8px; font-weight: 800;
+  background: rgba(0,0,0,0.2); color: inherit;
+  padding: 1px 4px; border-radius: 6px;
 }
-.week-badge-ready {
-  font-size: 9px; font-weight: 700;
-  background: #48bb78; color: white;
-  padding: 1px 5px; border-radius: 8px;
-}
+.week-badge-ready { display: none; }
 .week-tab-delete {
   width: 16px; height: 16px;
   background: rgba(0,0,0,0.12); border: none;
@@ -1025,9 +1044,10 @@ async function loadWeekTabs() {
         onclick="${canAccess ? clickAction : ''}"
         ${!canAccess ? 'disabled' : ''}
         id="weektab-${w.id}"
+        data-week="${w.id}"
         ${editAttrs}
         title="${isAdmin ? 'ダブルクリックで名前変更' : w.label}">
-        <span class="week-tab-text">${w.label}</span> ${badge}${deleteBtn}
+        <span class="week-tab-text">${w.label}</span>${badge}${deleteBtn}
       </button>`;
     }).join('');
 
