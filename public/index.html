@@ -1028,29 +1028,17 @@ async function loadWeekTabs() {
     const bar = document.getElementById('weekTabBar');
     const isAdmin = currentRole === 'admin';
 
-    const tabsHtml = data.weeks.map(w => {
-      const isActive   = w.id === currentWeekId;
-      const canAccess  = w.hasFile || isAdmin;
-      const badge      = w.hasFile
-        ? `<span class="week-badge-ready">●</span>`
-        : `<span class="week-badge-new">準備中</span>`;
-      const clickAction = w.hasFile
-        ? `switchWeek('${w.id}')`
-        : `openUploadModal('${w.id}')`;
-      // 管理者はダブルクリックで名前変更、削除ボタンあり
-      const editAttrs  = isAdmin ? `ondblclick="startRenameTab(event,'${w.id}','${w.label.replace(/'/g,"\\'")}')"` : '';
-      const deleteBtn  = (isAdmin && w.id !== 'week1')
+    const tabsHtml = data.weeks.map((w, i) => {
+      const isActive    = w.id === currentWeekId;
+      const canAccess   = w.hasFile || isAdmin;
+      const weekNum     = `【第${i + 1}週】`;
+      const badge       = w.hasFile ? '' : `<span class="week-badge-new">準備中</span>`;
+      const clickAction = w.hasFile ? `switchWeek('${w.id}')` : `openUploadModal('${w.id}')`;
+      const editAttrs   = isAdmin ? `ondblclick="startRenameTab(event,'${w.id}','${w.label.replace(/'/g,"\\'")}')"` : '';
+      const deleteBtn   = (isAdmin && w.id !== 'week1')
         ? `<button class="week-tab-delete" onclick="deleteWeekTab(event,'${w.id}')" title="削除">×</button>`
         : '';
-      return `<button class="week-tab${isActive ? ' active' : ''}"
-        onclick="${canAccess ? clickAction : ''}"
-        ${!canAccess ? 'disabled' : ''}
-        id="weektab-${w.id}"
-        data-week="${w.id}"
-        ${editAttrs}
-        title="${isAdmin ? 'ダブルクリックで名前変更' : w.label}">
-        <span class="week-tab-text">${w.label}</span>${badge}${deleteBtn}
-      </button>`;
+      return `<button class="week-tab${isActive ? ' active' : ''}" onclick="${canAccess ? clickAction : ''}" ${!canAccess ? 'disabled' : ''} id="weektab-${w.id}" data-week="${w.id}" ${editAttrs} title="${w.label}"><span class="week-tab-text">${weekNum} ${w.label}</span>${badge}${deleteBtn}</button>`;
     }).join('');
 
     // 管理者のみ「+追加」ボタン
