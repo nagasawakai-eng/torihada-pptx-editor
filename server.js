@@ -199,6 +199,44 @@ app.get('/api/weeks', (req, res) => {
   res.json({ success: true, weeks });
 });
 
+// ─── 週ラベル変更（管理者のみ） ───
+app.patch('/api/weeks/:weekId', requireRole('admin'), (req, res) => {
+  const { weekId } = req.params;
+  const { label } = req.body;
+  if (!label || !label.trim()) return res.status(400).json({ error: 'ラベルが空です' });
+  const config = loadWeeksConfig();
+  const week = config.weeks.find(w => w.id === weekId);
+  if (!week) return res.status(404).json({ error: '週が見つかりません' });
+  week.label = label.trim();
+  fs.writeFileSync(WEEKS_CONFIG_PATH, JSON.stringify(config, null, 2));
+  res.json({ success: true, week });
+});
+
+// ─── 週の追加（管理者のみ） ───
+app.post('/api/weeks', requireRole('admin'), (req, res) => {
+  const config = loadWeeksConfig();
+  const existing = config.weeks.map(w => w.id);
+  // 連番でIDを生成
+  let n = config.weeks.length + 1;
+  while (existing.includes(`week${n}`)) n++;
+  const newWeek = { id: `week${n}`, label: `第${n}週`, file: null };
+  config.weeks.push(newWeek);
+  fs.writeFileSync(WEEKS_CONFIG_PATH, JSON.stringify(config, null, 2));
+  res.json({ success: true, week: newWeek });
+});
+
+// ─── 週の削除（管理者のみ） ───
+app.delete('/api/weeks/:weekId', requireRole('admin'), (req, res) => {
+  const { weekId } = req.params;
+  if (weekId === 'week1') return res.status(400).json({ error: '第1週は削除できません' });
+  const config = loadWeeksConfig();
+  const idx = config.weeks.findIndex(w => w.id === weekId);
+  if (idx === -1) return res.status(404).json({ error: '週が見つかりません' });
+  config.weeks.splice(idx, 1);
+  fs.writeFileSync(WEEKS_CONFIG_PATH, JSON.stringify(config, null, 2));
+  res.json({ success: true });
+});
+
 // ─── PPTXファイルアップロード（管理者のみ） ───
 app.post('/api/weeks/:weekId/upload',
   requireRole('admin'),

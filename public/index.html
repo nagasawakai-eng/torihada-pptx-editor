@@ -60,6 +60,26 @@ body {
   background: #48bb78; color: white;
   padding: 1px 5px; border-radius: 8px;
 }
+.week-tab-delete {
+  width: 16px; height: 16px;
+  background: rgba(0,0,0,0.12); border: none;
+  border-radius: 50%; color: #555; font-size: 11px; line-height: 1;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  margin-left: 2px; transition: background 0.15s;
+}
+.week-tab-delete:hover { background: #e94560; color: white; }
+.week-tab-add {
+  padding: 6px 12px; border: 1.5px dashed #cbd5e0;
+  background: none; color: #a0aec0; font-size: 18px; line-height: 1;
+  border-radius: 8px; cursor: pointer; transition: all 0.2s;
+  margin-left: 4px;
+}
+.week-tab-add:hover { border-color: #e94560; color: #e94560; background: #fff5f7; }
+.week-tab-label-edit {
+  background: white; border: 1.5px solid #e94560; border-radius: 5px;
+  font-size: 13px; font-weight: 600; color: #1a1a2e;
+  padding: 1px 6px; width: 80px; outline: none;
+}
 
 /* ====== ヘッダー ====== */
 header {
@@ -985,20 +1005,97 @@ async function loadWeekTabs() {
     const data = await res.json();
     if (!data.success) return;
     const bar = document.getElementById('weekTabBar');
-    bar.innerHTML = data.weeks.map(w => {
-      const isActive = w.id === currentWeekId;
-      const badge = w.hasFile
+    const isAdmin = currentRole === 'admin';
+
+    const tabsHtml = data.weeks.map(w => {
+      const isActive   = w.id === currentWeekId;
+      const canAccess  = w.hasFile || isAdmin;
+      const badge      = w.hasFile
         ? `<span class="week-badge-ready">●</span>`
         : `<span class="week-badge-new">準備中</span>`;
-      const canAccess = w.hasFile || currentRole === 'admin';
+      const clickAction = w.hasFile
+        ? `switchWeek('${w.id}')`
+        : `openUploadModal('${w.id}')`;
+      // 管理者はダブルクリックで名前変更、削除ボタンあり
+      const editAttrs  = isAdmin ? `ondblclick="startRenameTab(event,'${w.id}','${w.label.replace(/'/g,"\\'")}')"` : '';
+      const deleteBtn  = (isAdmin && w.id !== 'week1')
+        ? `<button class="week-tab-delete" onclick="deleteWeekTab(event,'${w.id}')" title="削除">×</button>`
+        : '';
       return `<button class="week-tab${isActive ? ' active' : ''}"
-        onclick="${w.hasFile ? `switchWeek('${w.id}')` : `openUploadModal('${w.id}')`}"
+        onclick="${canAccess ? clickAction : ''}"
         ${!canAccess ? 'disabled' : ''}
-        title="${w.hasFile ? w.label : w.label + ' (クリックしてアップロード)'}">
-        ${w.label} ${badge}
+        id="weektab-${w.id}"
+        ${editAttrs}
+        title="${isAdmin ? 'ダブルクリックで名前変更' : w.label}">
+        <span class="week-tab-text">${w.label}</span> ${badge}${deleteBtn}
       </button>`;
     }).join('');
+
+    // 管理者のみ「+追加」ボタン
+    const addBtn = isAdmin
+      ? `<button class="week-tab-add" onclick="addWeekTab()" title="週を追加">＋</button>`
+      : '';
+
+    bar.innerHTML = tabsHtml + addBtn;
   } catch(e) { /* タブ取得失敗は無視 */ }
+}
+
+// タブ名インライン編集
+function startRenameTab(e, weekId, currentLabel) {
+  e.stopPropagation();
+  const btn = document.getElementById(`weektab-${weekId}`);
+  const span = btn.querySelector('.week-tab-text');
+  if (!span) return;
+  const input = document.createElement('input');
+  input.className = 'week-tab-label-edit';
+  input.value = currentLabel;
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+
+  async function commitRename() {
+    const newLabel = input.value.trim() || currentLabel;
+    input.disabled = true;
+    try {
+      await fetch(`/api/weeks/${weekId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: newLabel })
+      });
+    } catch(e) {}
+    await loadWeekTabs();
+  }
+
+  input.addEventListener('blur', commitRename);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.value = currentLabel; input.blur(); }
+  });
+}
+
+// 週タブ追加
+async function addWeekTab() {
+  try {
+    const res = await fetch('/api/weeks', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) await loadWeekTabs();
+  } catch(e) {}
+}
+
+// 週タブ削除
+async function deleteWeekTab(e, weekId) {
+  e.stopPropagation();
+  const tab = document.getElementById(`weektab-${weekId}`);
+  const label = tab?.querySelector('.week-tab-text')?.textContent?.trim() || weekId;
+  if (!confirm(`「${label}」を削除しますか？\nPPTXファイルは削除されません。`)) return;
+  try {
+    await fetch(`/api/weeks/${weekId}`, { method: 'DELETE' });
+    if (currentWeekId === weekId) {
+      currentWeekId = 'week1';
+      await loadSlides();
+    }
+    await loadWeekTabs();
+  } catch(e) {}
 }
 
 async function switchWeek(weekId) {
