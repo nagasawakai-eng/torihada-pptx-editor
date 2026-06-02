@@ -1863,7 +1863,7 @@ function closeVideoReview() {
 function vrRenderSlide() {
   const slide = allSlides[vrState.idx];
   const num = String(slide.slideNum).padStart(2, '0');
-  document.getElementById('vrSlideImg').src = `/preview/slide_${num}.png`;
+  document.getElementById('vrSlideImg').src = `/preview/${currentWeekId}/slide_${num}.png`;
   document.getElementById('vrSlideInfo').textContent = `Slide ${slide.slideNum} / ${vrState.total}`;
   document.getElementById('vrTime').textContent = `${vrState.idx + 1} / ${vrState.total}`;
   document.getElementById('vrProgressFill').style.width = `${((vrState.idx) / (vrState.total - 1)) * 100}%`;
@@ -1980,9 +1980,13 @@ async function vrSpeakCurrent() {
   } catch(e) {
     if (e.name === 'AbortError') return;
     console.error('VOICEVOX error:', e);
-    document.getElementById('vrScriptText').textContent = script;
-    document.getElementById('vrPlayBtn').textContent = vrState.playing ? '⏸' : '▶';
-    if (vrState.playing) setTimeout(vrAdvance, 1000);
+    const isConnErr = e.message.includes('Failed to fetch') || e.message.includes('NetworkError');
+    document.getElementById('vrScriptText').innerHTML =
+      isConnErr
+        ? `<span style="color:#fc8181;">⚠️ VOICEVOXに接続できません。<br>PCでVOICEVOXを起動してから再度お試しください。</span>`
+        : `<span style="color:#fc8181;">⚠️ 音声生成エラー: ${e.message}</span>`;
+    document.getElementById('vrPlayBtn').textContent = '▶';
+    vrState.playing = false;
   }
 }
 
