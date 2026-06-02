@@ -1832,7 +1832,7 @@ async function openVideoReview() {
 
   // スピーカー一覧を取得して dropdown に反映
   try {
-    const sRes = await fetch('/api/voicevox/speakers');
+    const sRes = await fetch('http://localhost:50021/speakers');
     const speakers = await sRes.json();
     const sel = document.getElementById('vrSpeakerSelect');
     sel.innerHTML = '';
@@ -1921,23 +1921,32 @@ async function vrSpeakCurrent() {
   document.getElementById('vrPlayBtn').textContent = '⌛';
 
   vrState.abortCtrl = new AbortController();
+  const VV = 'http://localhost:50021';
   try {
-    const res = await fetch('/api/voicevox/audio', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: script,
-        speaker: vrState.speaker,
-        speedScale: vrState.speed,
-        intonationScale: vrState.intonation,
-        pauseLengthScale: vrState.pause,
-        prePhonemeLength: 0.12,    // 発話前の小さな間（息継ぎ）
-        postPhonemeLength: 0.12,   // 発話後の余韻
-      }),
-      signal: vrState.abortCtrl.signal
-    });
+    // audio_query
+    const qRes = await fetch(
+      `${VV}/audio_query?text=${encodeURIComponent(script)}&speaker=${vrState.speaker}`,
+      { method: 'POST', signal: vrState.abortCtrl.signal }
+    );
+    if (!qRes.ok) throw new Error(`audio_query HTTP ${qRes.status}`);
+    const query = await qRes.json();
+    query.speedScale      = vrState.speed;
+    query.intonationScale = vrState.intonation;
+    query.pauseLengthScale = vrState.pause;
+    query.prePhonemeLength  = 0.12;
+    query.postPhonemeLength = 0.12;
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // synthesis
+    const res = await fetch(
+      `${VV}/synthesis?speaker=${vrState.speaker}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(query),
+        signal: vrState.abortCtrl.signal
+      }
+    );
+    if (!res.ok) throw new Error(`synthesis HTTP ${res.status}`);
     const blob = await res.blob();
     vrState.blobUrl = URL.createObjectURL(blob);
 
