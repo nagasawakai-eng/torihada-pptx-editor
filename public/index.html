@@ -2292,6 +2292,8 @@ async function initRole() {
   // 週タブとスライドを初期ロード
   await loadWeekTabs();
   await loadSlides();
+  // 更新チェック開始
+  startUpdateChecker();
 }
 
 // ====== アップロードモーダル（管理者のみ） ======
@@ -2388,6 +2390,51 @@ function applyRoleUI() {
     const shareBtn = document.getElementById('shareBtn');
     if (shareBtn) shareBtn.style.display = 'inline-flex';
   }
+}
+
+// ====== 資料更新通知 ======
+let _currentVersion = null;
+
+async function startUpdateChecker() {
+  try {
+    const res = await fetch('/api/version');
+    const { version } = await res.json();
+    _currentVersion = version;
+  } catch(e) {}
+
+  setInterval(async () => {
+    try {
+      const res = await fetch('/api/version');
+      const { version } = await res.json();
+      if (_currentVersion && version !== _currentVersion) {
+        showUpdateBanner();
+      }
+    } catch(e) {}
+  }, 60000); // 60秒ごとにチェック
+}
+
+function showUpdateBanner() {
+  if (document.getElementById('updateBanner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'updateBanner';
+  banner.style.cssText = [
+    'position:fixed','top:0','left:0','right:0',
+    'background:linear-gradient(135deg,#e94560,#c53030)',
+    'color:white','padding:12px 20px',
+    'font-size:13px','font-weight:700',
+    'z-index:99999','display:flex',
+    'align-items:center','justify-content:space-between',
+    'box-shadow:0 2px 12px rgba(0,0,0,0.3)'
+  ].join(';');
+  banner.innerHTML = `
+    <span>🔔 資料が更新されました！最新の内容を反映するにはページを更新してください。</span>
+    <button onclick="location.reload()"
+      style="background:white;color:#e94560;border:none;padding:6px 16px;
+             border-radius:20px;font-weight:800;cursor:pointer;font-size:12px;margin-left:16px;">
+      今すぐ更新
+    </button>
+  `;
+  document.body.prepend(banner);
 }
 
 // 閲覧モードバナー

@@ -117,6 +117,12 @@ app.use((req, res, next) => {
   next();
 });
 
+// ─── バージョン情報（デプロイ検知用） ───
+const SERVER_START_TIME = Date.now();
+app.get('/api/version', (req, res) => {
+  res.json({ version: SERVER_START_TIME });
+});
+
 // ─── 現在のロール取得 API ───
 app.get('/api/me', (req, res) => {
   const token = extractToken(req);
