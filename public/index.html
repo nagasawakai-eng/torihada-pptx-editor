@@ -793,9 +793,14 @@ textarea.run-input.changed {
         </div>
       </div>
       <div class="vr-speaker-row">
+        <span class="vr-speaker-label">🔊 エンジン</span>
+        <select id="vrEngineSelect" class="vr-speaker-select" onchange="vrSetEngine(this.value)" style="min-width:120px;">
+          <option value="fishaudio">FishAudio ☁️</option>
+          <option value="voicevox">VOICEVOX 💻</option>
+        </select>
         <span class="vr-speaker-label">🎤 話者</span>
         <select id="vrSpeakerSelect" class="vr-speaker-select" onchange="vrSetSpeaker(this.value)">
-          <option value="8">春日部つむぎ（ノーマル）</option>
+          <option value="">読み込み中...</option>
         </select>
         <div class="vr-intonation-group" style="margin-left:16px;">
           <span class="vr-speed-label">抑揚</span>
@@ -1814,6 +1819,7 @@ async function saveLayoutEdits() {
 
 // ====== 動画レビュー ======
 let vrScripts = {};
+let vrEngine = 'fishaudio'; // 'fishaudio' or 'voicevox'
 const vrState = {
   idx: 0, total: 0, playing: false,
   speed: 0.93,        // 少しゆっくり = 人間らしいテンポ
@@ -1830,22 +1836,10 @@ async function openVideoReview() {
     vrScripts = data.scripts || {};
   } catch(e) { vrScripts = {}; }
 
-  // スピーカー一覧を取得して dropdown に反映
-  try {
-    const sRes = await fetch('http://localhost:50021/speakers');
-    const speakers = await sRes.json();
-    const sel = document.getElementById('vrSpeakerSelect');
-    sel.innerHTML = '';
-    speakers.forEach(sp => {
-      sp.styles.forEach(st => {
-        const opt = document.createElement('option');
-        opt.value = st.id;
-        opt.textContent = `${sp.name}（${st.name}）`;
-        if (st.id === vrState.speaker) opt.selected = true;
-        sel.appendChild(opt);
-      });
-    });
-  } catch(e) { /* VOICEVOXが起動していない場合はデフォルトのまま */ }
+  // エンジン選択を反映
+  document.getElementById('vrEngineSelect').value = vrEngine;
+  // 話者一覧を取得
+  await vrLoadVoices();
 
   vrState.total = allSlides.length;
   vrState.idx = currentSlideIdx;
@@ -1853,6 +1847,45 @@ async function openVideoReview() {
 
   document.getElementById('videoReviewOverlay').classList.add('open');
   vrRenderSlide();
+}
+
+async function vrSetEngine(engine) {
+  vrEngine = engine;
+  await vrLoadVoices();
+}
+
+async function vrLoadVoices() {
+  const sel = document.getElementById('vrSpeakerSelect');
+  sel.innerHTML = '<option value="">読み込み中...</option>';
+  try {
+    if (vrEngine === 'fishaudio') {
+      const res = await fetch('/api/fishaudio/voices');
+      const data = await res.json();
+      sel.innerHTML = '';
+      (data.voices || []).forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.name;
+        sel.appendChild(opt);
+      });
+    } else {
+      // VOICEVOX
+      const res = await fetch('http://localhost:50021/speakers');
+      const speakers = await res.json();
+      sel.innerHTML = '';
+      speakers.forEach(sp => {
+        sp.styles.forEach(st => {
+          const opt = document.createElement('option');
+          opt.value = st.id;
+          opt.textContent = `${sp.name}（${st.name}）`;
+          if (st.id === vrState.speaker) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      });
+    }
+  } catch(e) {
+    sel.innerHTML = `<option value="">⚠️ 取得失敗</option>`;
+  }
 }
 
 function closeVideoReview() {
@@ -1921,32 +1954,39 @@ async function vrSpeakCurrent() {
   document.getElementById('vrPlayBtn').textContent = '⌛';
 
   vrState.abortCtrl = new AbortController();
-  const VV = 'http://localhost:50021';
+  const voiceId = document.getElementById('vrSpeakerSelect')?.value || '';
   try {
-    // audio_query
-    const qRes = await fetch(
-      `${VV}/audio_query?text=${encodeURIComponent(script)}&speaker=${vrState.speaker}`,
-      { method: 'POST', signal: vrState.abortCtrl.signal }
-    );
-    if (!qRes.ok) throw new Error(`audio_query HTTP ${qRes.status}`);
-    const query = await qRes.json();
-    query.speedScale      = vrState.speed;
-    query.intonationScale = vrState.intonation;
-    query.pauseLengthScale = vrState.pause;
-    query.prePhonemeLength  = 0.12;
-    query.postPhonemeLength = 0.12;
-
-    // synthesis
-    const res = await fetch(
-      `${VV}/synthesis?speaker=${vrState.speaker}`,
-      {
+    let res;
+    if (vrEngine === 'fishaudio') {
+      // FishAudio（サーバー経由）
+      res = await fetch('/api/fishaudio/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: script, voiceId, speed: vrState.speed }),
+        signal: vrState.abortCtrl.signal
+      });
+    } else {
+      // VOICEVOX（ブラウザ直接）
+      const VV = 'http://localhost:50021';
+      const qRes = await fetch(
+        `${VV}/audio_query?text=${encodeURIComponent(script)}&speaker=${vrState.speaker}`,
+        { method: 'POST', signal: vrState.abortCtrl.signal }
+      );
+      if (!qRes.ok) throw new Error(`audio_query HTTP ${qRes.status}`);
+      const query = await qRes.json();
+      query.speedScale = vrState.speed;
+      query.intonationScale = vrState.intonation;
+      query.pauseLengthScale = vrState.pause;
+      query.prePhonemeLength = 0.12;
+      query.postPhonemeLength = 0.12;
+      res = await fetch(`${VV}/synthesis?speaker=${vrState.speaker}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(query),
         signal: vrState.abortCtrl.signal
-      }
-    );
-    if (!res.ok) throw new Error(`synthesis HTTP ${res.status}`);
+      });
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     vrState.blobUrl = URL.createObjectURL(blob);
 

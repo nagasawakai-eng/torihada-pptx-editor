@@ -937,6 +937,59 @@ app.post('/api/restore', requireEditor, (req, res) => {
   }
 });
 
+// ====== FishAudio プロキシ ======
+const https = require('https');
+const FISHAUDIO_API_KEY = process.env.FISHAUDIO_API_KEY || '';
+
+// 日本語ボイス一覧取得
+app.get('/api/fishaudio/voices', async (req, res) => {
+  if (!FISHAUDIO_API_KEY) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
+  try {
+    const r = await fetch('https://api.fish.audio/model?page_size=20&language=ja', {
+      headers: { 'Authorization': `Bearer ${FISHAUDIO_API_KEY}` }
+    });
+    const data = await r.json();
+    const voices = (data.items || []).map(v => ({ id: v._id, name: v.title }));
+    res.json({ success: true, voices });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// テキスト→音声生成
+app.post('/api/fishaudio/tts', async (req, res) => {
+  if (!FISHAUDIO_API_KEY) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
+  const { text, voiceId, speed = 1.0 } = req.body;
+  if (!text) return res.status(400).json({ error: 'text は必須です' });
+  try {
+    const body = JSON.stringify({
+      text,
+      reference_id: voiceId || null,
+      format: 'mp3',
+      mp3_bitrate: 128,
+      normalize: true,
+      latency: 'normal',
+    });
+    const r = await fetch('https://api.fish.audio/v1/tts', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${FISHAUDIO_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body
+    });
+    if (!r.ok) {
+      const err = await r.text();
+      return res.status(r.status).json({ error: err });
+    }
+    res.set('Content-Type', 'audio/mpeg');
+    const buf = await r.arrayBuffer();
+    res.send(Buffer.from(buf));
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====== VOICEVOX プロキシ ======
 function vvPost(path, headers, body) {
   return new Promise((resolve, reject) => {
