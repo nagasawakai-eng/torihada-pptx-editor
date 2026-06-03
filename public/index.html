@@ -984,9 +984,12 @@ textarea.run-input.changed {
     <div class="tab-content" id="content-script">
       <div style="max-width:780px;">
         <div style="background:white;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.06);overflow:hidden;">
-          <div style="background:#1a1a2e;color:white;padding:14px 20px;display:flex;align-items:center;gap:10px;">
-            <span style="background:#e94560;color:white;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;" id="scriptSlideBadge">Slide 1</span>
-            <span style="font-size:14px;font-weight:600;" id="scriptSlideTitle">スライドタイトル</span>
+          <div style="background:#1a1a2e;color:white;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="background:#e94560;color:white;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;" id="scriptSlideBadge">Slide 1</span>
+              <span style="font-size:14px;font-weight:600;" id="scriptSlideTitle">スライドタイトル</span>
+            </div>
+            <span style="font-size:12px;color:#a0aec0;" id="scriptPageInfo"></span>
           </div>
           <div style="padding:20px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -994,34 +997,24 @@ textarea.run-input.changed {
               <span style="font-size:11px;color:#a0aec0;" id="scriptCharCount">0文字</span>
             </div>
             <textarea id="scriptTextarea"
-              style="width:100%;min-height:200px;padding:14px;border:1.5px solid #e2e8f0;border-radius:10px;
-                     font-size:14px;font-family:inherit;line-height:1.8;resize:vertical;background:#fafafa;"
+              style="width:100%;min-height:240px;padding:14px;border:1.5px solid #e2e8f0;border-radius:10px;
+                     font-size:14px;font-family:inherit;line-height:1.9;resize:vertical;background:#fafafa;"
               placeholder="このスライドの台本を入力してください..."
               oninput="onScriptChange(this)"></textarea>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;">
-              <span style="font-size:12px;color:#a0aec0;" id="scriptSaveStatus"></span>
-              <div style="display:flex;gap:8px;">
-                <button onclick="saveScript()"
-                  style="padding:8px 20px;background:#e94560;color:white;border:none;border-radius:8px;
-                         font-size:13px;font-weight:700;cursor:pointer;">
-                  💾 保存
-                </button>
-              </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;">
+              <span style="font-size:12px;" id="scriptSaveStatus"></span>
+              <button onclick="saveScript()"
+                style="padding:8px 24px;background:#e94560;color:white;border:none;border-radius:8px;
+                       font-size:13px;font-weight:700;cursor:pointer;">
+                💾 保存
+              </button>
             </div>
           </div>
         </div>
-        <!-- 前後スライドナビ -->
+        <!-- 前後ナビ -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px;">
           <button class="btn-nav" onclick="scriptNavPrev()">← 前のスライド</button>
-          <span style="font-size:12px;color:#718096;font-weight:600;" id="scriptPageInfo"></span>
           <button class="btn-nav" onclick="scriptNavNext()">次のスライド →</button>
-        </div>
-        <!-- 全台本一覧 -->
-        <div style="margin-top:24px;background:white;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.06);overflow:hidden;">
-          <div style="background:#f7fafc;padding:12px 20px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:700;color:#4a5568;">
-            📋 全スライド台本一覧
-          </div>
-          <div id="scriptAllList" style="padding:12px 20px;display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;"></div>
         </div>
       </div>
     </div>
@@ -1210,11 +1203,13 @@ function renderSidebar() {
   list.innerHTML = allSlides.map((slide, idx) => {
     const firstShape = slide.shapes[0];
     const previewText = firstShape?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
+    const hasScript = !!(allScripts[String(slide.slideNum)]?.trim());
     return `
       <div class="slide-thumb" id="thumb-${idx}" onclick="renderSlide(${idx})">
         <div class="slide-num">${slide.slideNum}</div>
         <div class="slide-info">
           <div class="slide-title-preview">${escH(previewText)}</div>
+          ${hasScript ? `<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-top:2px;">🎙️ 台本あり</div>` : ''}
         </div>
         <div class="slide-change-count" id="count-${idx}">0</div>
       </div>`;
@@ -1300,6 +1295,11 @@ function renderSlide(idx) {
 
   // テキストエリア高さ自動調整
   area.querySelectorAll('textarea').forEach(autoResize);
+
+  // 台本タブが開いていれば連動して更新
+  if (document.getElementById('tab-script')?.classList.contains('active')) {
+    renderScriptTab();
+  }
 }
 
 function navHtml(idx) {
@@ -1583,7 +1583,7 @@ async function saveScript() {
     });
     status.textContent = '✅ 保存しました';
     status.style.color = '#48bb78';
-    renderScriptAllList();
+    renderSidebar(); // サイドバーの台本バッジを更新
   } catch(e) {
     status.textContent = '❌ 保存失敗';
     status.style.color = '#fc8181';
