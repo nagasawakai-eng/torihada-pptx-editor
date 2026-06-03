@@ -962,6 +962,9 @@ textarea.run-input.changed {
       <button class="tab-btn active" id="tab-edit" onclick="switchTab('edit')">
         ✏️ テキスト編集
       </button>
+      <button class="tab-btn" id="tab-script" onclick="switchTab('script')">
+        🎙️ 台本
+      </button>
       <button class="tab-btn" id="tab-changes" onclick="switchTab('changes')">
         📋 変更一覧
         <span class="tab-count" id="tabChangeCount"></span>
@@ -975,6 +978,52 @@ textarea.run-input.changed {
         <div>スライドを読み込み中...</div>
       </div>
       <div id="slideEditorArea" style="display:none;"></div>
+    </div>
+
+    <!-- 台本タブ -->
+    <div class="tab-content" id="content-script">
+      <div style="max-width:780px;">
+        <div style="background:white;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.06);overflow:hidden;">
+          <div style="background:#1a1a2e;color:white;padding:14px 20px;display:flex;align-items:center;gap:10px;">
+            <span style="background:#e94560;color:white;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;" id="scriptSlideBadge">Slide 1</span>
+            <span style="font-size:14px;font-weight:600;" id="scriptSlideTitle">スライドタイトル</span>
+          </div>
+          <div style="padding:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <label style="font-size:12px;font-weight:700;color:#4a5568;">🎙️ ナレーション台本</label>
+              <span style="font-size:11px;color:#a0aec0;" id="scriptCharCount">0文字</span>
+            </div>
+            <textarea id="scriptTextarea"
+              style="width:100%;min-height:200px;padding:14px;border:1.5px solid #e2e8f0;border-radius:10px;
+                     font-size:14px;font-family:inherit;line-height:1.8;resize:vertical;background:#fafafa;"
+              placeholder="このスライドの台本を入力してください..."
+              oninput="onScriptChange(this)"></textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;">
+              <span style="font-size:12px;color:#a0aec0;" id="scriptSaveStatus"></span>
+              <div style="display:flex;gap:8px;">
+                <button onclick="saveScript()"
+                  style="padding:8px 20px;background:#e94560;color:white;border:none;border-radius:8px;
+                         font-size:13px;font-weight:700;cursor:pointer;">
+                  💾 保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 前後スライドナビ -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:0 4px;">
+          <button class="btn-nav" onclick="scriptNavPrev()">← 前のスライド</button>
+          <span style="font-size:12px;color:#718096;font-weight:600;" id="scriptPageInfo"></span>
+          <button class="btn-nav" onclick="scriptNavNext()">次のスライド →</button>
+        </div>
+        <!-- 全台本一覧 -->
+        <div style="margin-top:24px;background:white;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.06);overflow:hidden;">
+          <div style="background:#f7fafc;padding:12px 20px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:700;color:#4a5568;">
+            📋 全スライド台本一覧
+          </div>
+          <div id="scriptAllList" style="padding:12px 20px;display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;"></div>
+        </div>
+      </div>
     </div>
 
     <!-- 変更一覧タブ -->
@@ -1476,6 +1525,110 @@ function switchTab(name) {
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById(`tab-${name}`).classList.add('active');
   document.getElementById(`content-${name}`).classList.add('active');
+  if (name === 'script') renderScriptTab();
+}
+
+// ====== 台本タブ ======
+let allScripts = {};
+
+async function loadScripts() {
+  try {
+    const res = await fetch('/api/scripts');
+    const data = await res.json();
+    allScripts = data.scripts || {};
+  } catch(e) { allScripts = {}; }
+}
+
+function renderScriptTab() {
+  if (!allSlides.length) return;
+  const slide = allSlides[currentSlideIdx];
+  const num = String(slide.slideNum);
+  const title = slide.shapes.find(s => s.isTitle)?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
+
+  document.getElementById('scriptSlideBadge').textContent = `Slide ${slide.slideNum}`;
+  document.getElementById('scriptSlideTitle').textContent = title;
+  document.getElementById('scriptPageInfo').textContent = `${currentSlideIdx + 1} / ${allSlides.length}`;
+
+  const textarea = document.getElementById('scriptTextarea');
+  textarea.value = allScripts[num] || '';
+  updateScriptCharCount();
+  document.getElementById('scriptSaveStatus').textContent = '';
+
+  // 全台本一覧を更新
+  renderScriptAllList();
+}
+
+function updateScriptCharCount() {
+  const len = document.getElementById('scriptTextarea').value.length;
+  document.getElementById('scriptCharCount').textContent = `${len}文字`;
+}
+
+function onScriptChange(el) {
+  updateScriptCharCount();
+  document.getElementById('scriptSaveStatus').textContent = '未保存';
+  document.getElementById('scriptSaveStatus').style.color = '#f6ad55';
+}
+
+async function saveScript() {
+  const slide = allSlides[currentSlideIdx];
+  const num = String(slide.slideNum);
+  allScripts[num] = document.getElementById('scriptTextarea').value;
+  const status = document.getElementById('scriptSaveStatus');
+  status.textContent = '保存中...';
+  try {
+    await fetch('/api/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scripts: allScripts })
+    });
+    status.textContent = '✅ 保存しました';
+    status.style.color = '#48bb78';
+    renderScriptAllList();
+  } catch(e) {
+    status.textContent = '❌ 保存失敗';
+    status.style.color = '#fc8181';
+  }
+}
+
+function scriptNavPrev() {
+  if (currentSlideIdx > 0) {
+    currentSlideIdx--;
+    renderSidebar();
+    renderScriptTab();
+  }
+}
+
+function scriptNavNext() {
+  if (currentSlideIdx < allSlides.length - 1) {
+    currentSlideIdx++;
+    renderSidebar();
+    renderScriptTab();
+  }
+}
+
+function renderScriptAllList() {
+  const list = document.getElementById('scriptAllList');
+  if (!list) return;
+  list.innerHTML = allSlides.map((slide, idx) => {
+    const num = String(slide.slideNum);
+    const script = allScripts[num] || '';
+    const title = slide.shapes.find(s => s.isTitle)?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
+    const hasScript = script.length > 0;
+    return `
+      <div onclick="currentSlideIdx=${idx};renderScriptTab();"
+        style="padding:10px 14px;border:1.5px solid ${idx===currentSlideIdx?'#e94560':'#e2e8f0'};
+               border-radius:8px;cursor:pointer;background:${idx===currentSlideIdx?'#fff5f7':'white'};
+               transition:all 0.15s;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="background:${hasScript?'#48bb78':'#e2e8f0'};color:${hasScript?'white':'#a0aec0'};
+                       font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">
+            ${hasScript ? '✓ あり' : '未入力'}
+          </span>
+          <span style="font-size:12px;font-weight:600;color:#4a5568;">Slide ${slide.slideNum} — ${escH(title.substring(0,25))}${title.length>25?'…':''}</span>
+        </div>
+        ${hasScript ? `<div style="font-size:11px;color:#718096;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escH(script.substring(0,60))}...</div>` : ''}
+      </div>`;
+  }).join('');
 }
 
 // ====== 保存 ======
@@ -2292,6 +2445,8 @@ async function initRole() {
   // 週タブとスライドを初期ロード
   await loadWeekTabs();
   await loadSlides();
+  // 台本を読み込み
+  await loadScripts();
   // 更新チェック開始
   startUpdateChecker();
 }
