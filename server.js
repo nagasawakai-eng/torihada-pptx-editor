@@ -944,11 +944,24 @@ app.post('/api/restore', requireEditor, (req, res) => {
 });
 
 // ====== FishAudio プロキシ ======
-// ※ process.env はリクエスト時に毎回参照（起動時定数化しない）
+const FISHAUDIO_CONFIG_PATH = path.join(__dirname, 'fishaudio.config.json');
+
+function getFishAudioKey() {
+  // 1. 環境変数を優先
+  if (process.env.FISHAUDIO_API_KEY) return process.env.FISHAUDIO_API_KEY;
+  // 2. 設定ファイルから読み込み
+  try {
+    if (fs.existsSync(FISHAUDIO_CONFIG_PATH)) {
+      const cfg = JSON.parse(fs.readFileSync(FISHAUDIO_CONFIG_PATH, 'utf8'));
+      if (cfg.apiKey) return cfg.apiKey;
+    }
+  } catch(e) {}
+  return '';
+}
 
 // 日本語ボイス一覧取得
 app.get('/api/fishaudio/voices', async (req, res) => {
-  const apiKey = process.env.FISHAUDIO_API_KEY;
+  const apiKey = getFishAudioKey();
   if (!apiKey) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
   try {
     const r = await fetch('https://api.fish.audio/model?page_size=20&language=ja', {
@@ -964,7 +977,7 @@ app.get('/api/fishaudio/voices', async (req, res) => {
 
 // テキスト→音声生成
 app.post('/api/fishaudio/tts', async (req, res) => {
-  const apiKey = process.env.FISHAUDIO_API_KEY;
+  const apiKey = getFishAudioKey();
   if (!apiKey) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
   const { text, voiceId, speed = 1.0 } = req.body;
   if (!text) return res.status(400).json({ error: 'text は必須です' });
