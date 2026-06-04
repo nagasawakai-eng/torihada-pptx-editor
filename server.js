@@ -944,15 +944,15 @@ app.post('/api/restore', requireEditor, (req, res) => {
 });
 
 // ====== FishAudio プロキシ ======
-const https = require('https');
-const FISHAUDIO_API_KEY = process.env.FISHAUDIO_API_KEY || '';
+// ※ process.env はリクエスト時に毎回参照（起動時定数化しない）
 
 // 日本語ボイス一覧取得
 app.get('/api/fishaudio/voices', async (req, res) => {
-  if (!FISHAUDIO_API_KEY) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
+  const apiKey = process.env.FISHAUDIO_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
   try {
     const r = await fetch('https://api.fish.audio/model?page_size=20&language=ja', {
-      headers: { 'Authorization': `Bearer ${FISHAUDIO_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${apiKey}` }
     });
     const data = await r.json();
     const voices = (data.items || []).map(v => ({ id: v._id, name: v.title }));
@@ -964,7 +964,8 @@ app.get('/api/fishaudio/voices', async (req, res) => {
 
 // テキスト→音声生成
 app.post('/api/fishaudio/tts', async (req, res) => {
-  if (!FISHAUDIO_API_KEY) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
+  const apiKey = process.env.FISHAUDIO_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
   const { text, voiceId, speed = 1.0 } = req.body;
   if (!text) return res.status(400).json({ error: 'text は必須です' });
   try {
@@ -979,7 +980,7 @@ app.post('/api/fishaudio/tts', async (req, res) => {
     const r = await fetch('https://api.fish.audio/v1/tts', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${FISHAUDIO_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body
