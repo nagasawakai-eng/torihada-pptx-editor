@@ -1079,10 +1079,22 @@ textarea.run-input.changed {
           <span style="font-size:11px;font-weight:700;color:#718096;letter-spacing:0.06em;text-transform:uppercase;">🎙️ 台本</span>
           <span style="font-size:10px;color:#a0aec0;" id="previewScriptSlide"></span>
         </div>
-        <button onclick="switchTab('script')"
-          style="font-size:10px;color:#e94560;background:none;border:none;cursor:pointer;font-weight:700;padding:2px 6px;">
-          ✏️ 編集
-        </button>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <select id="fishVoiceSelect"
+            style="font-size:10px;padding:3px 6px;border:1px solid #e2e8f0;border-radius:6px;
+                   color:#4a5568;background:white;max-width:110px;cursor:pointer;">
+            <option value="">ボイス読込中...</option>
+          </select>
+          <button id="fishPlayBtn" onclick="toggleScriptAudio()"
+            style="padding:4px 10px;background:#7c3aed;color:white;border:none;border-radius:6px;
+                   font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">
+            ▶ 読み上げ
+          </button>
+          <button onclick="switchTab('script')"
+            style="font-size:10px;color:#e94560;background:none;border:none;cursor:pointer;font-weight:700;padding:2px 4px;">
+            ✏️
+          </button>
+        </div>
       </div>
       <div class="preview-script-body" id="previewScriptBody">
         <span style="color:#a0aec0;">スライドを選択すると台本が表示されます</span>
@@ -2489,6 +2501,8 @@ async function initRole() {
   await loadSlides();
   // 台本を読み込み
   await loadScripts();
+  // FishAudioボイス一覧を読み込み
+  await loadFishVoices();
   // 更新チェック開始
   startUpdateChecker();
 }
@@ -2586,6 +2600,70 @@ function applyRoleUI() {
   if (isAdmin) {
     const shareBtn = document.getElementById('shareBtn');
     if (shareBtn) shareBtn.style.display = 'inline-flex';
+  }
+}
+
+// ====== FishAudio 台本読み上げ ======
+let _fishAudio = null;
+let _fishPlaying = false;
+
+async function loadFishVoices() {
+  try {
+    const res = await fetch('/api/fishaudio/voices');
+    const data = await res.json();
+    const sel = document.getElementById('fishVoiceSelect');
+    if (!sel || !data.voices?.length) return;
+    sel.innerHTML = data.voices.map(v =>
+      `<option value="${v.id}">${v.name}</option>`
+    ).join('');
+  } catch(e) {}
+}
+
+async function toggleScriptAudio() {
+  const btn = document.getElementById('fishPlayBtn');
+  if (_fishPlaying) {
+    // 停止
+    if (_fishAudio) { _fishAudio.pause(); _fishAudio = null; }
+    _fishPlaying = false;
+    btn.textContent = '▶ 読み上げ';
+    btn.style.background = '#7c3aed';
+    return;
+  }
+
+  const slide = allSlides[currentSlideIdx];
+  if (!slide) return;
+  const script = allScripts[String(slide.slideNum)] || '';
+  if (!script) { alert('このスライドに台本がありません'); return; }
+
+  const voiceId = document.getElementById('fishVoiceSelect')?.value || '';
+  btn.textContent = '⏳ 生成中...';
+  btn.style.background = '#a0aec0';
+  _fishPlaying = true;
+
+  try {
+    const res = await fetch('/api/fishaudio/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: script, voiceId })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    _fishAudio = new Audio(url);
+    _fishAudio.play();
+    btn.textContent = '⏹ 停止';
+    btn.style.background = '#e94560';
+    _fishAudio.onended = () => {
+      _fishPlaying = false;
+      btn.textContent = '▶ 読み上げ';
+      btn.style.background = '#7c3aed';
+      URL.revokeObjectURL(url);
+    };
+  } catch(e) {
+    _fishPlaying = false;
+    btn.textContent = '▶ 読み上げ';
+    btn.style.background = '#7c3aed';
+    alert('読み上げエラー: ' + e.message);
   }
 }
 
