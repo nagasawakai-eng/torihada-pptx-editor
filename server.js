@@ -1124,6 +1124,40 @@ app.get('/download-pdf', (req, res) => {
   });
 });
 
+// ─── GitHub Webhook（自動 git pull） ───
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'torihada-auto-deploy-2024';
+
+app.post('/webhook/github', (req, res) => {
+  // 署名検証
+  const sig = req.headers['x-hub-signature-256'];
+  if (sig) {
+    const crypto = require('crypto');
+    const body = JSON.stringify(req.body);
+    const expected = 'sha256=' + crypto.createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex');
+    if (sig !== expected) {
+      console.warn('⚠️  Webhook: 署名不一致 - 無視します');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+
+  const branch = (req.body && req.body.ref) ? req.body.ref : '';
+  if (branch && branch !== 'refs/heads/master') {
+    return res.status(200).json({ message: 'masterブランチ以外は無視します' });
+  }
+
+  console.log('🔄 GitHub Webhook 受信 → git pull 実行中...');
+  res.status(200).json({ message: 'git pull を開始しました' });
+
+  const { execFile } = require('child_process');
+  execFile('git', ['pull', 'origin', 'master'], { cwd: __dirname }, (err, stdout, stderr) => {
+    if (err) {
+      console.error('❌ git pull 失敗:', err.message);
+    } else {
+      console.log('✅ git pull 完了:', stdout.trim() || 'Already up to date.');
+    }
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 const NGROK_PATH = 'C:\\Users\\長澤開\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Ngrok.Ngrok_Microsoft.Winget.Source_8wekyb3d8bbwe\\ngrok.exe';
 const NGROK_CONFIG = path.join(process.env.USERPROFILE || 'C:\\Users\\長澤開', 'AppData\\Local\\ngrok\\ngrok.yml');
@@ -1142,6 +1176,74 @@ app.listen(PORT, () => {
     console.log(`  ↑ このURLをGoogle Sitesに埋め込んでいます`);
     console.log(`\nCtrl+C で停止\n`);
     fs.writeFileSync(path.join(__dirname, 'tunnel_url.txt'), url, 'utf8');
+
+    // GitHub Webhookを自動登録（pushしたら自動git pull）
+    registerGithubWebhook(url + '/webhook/github');
+  }
+
+  function registerGithubWebhook(webhookUrl) {
+    const https = require('https');
+    const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+    const REPO = 'nagasawakai-eng/torihada-pptx-editor';
+    if (!GITHUB_TOKEN) {
+      console.log('ℹ️  GITHUB_TOKEN が未設定のためWebhook自動登録をスキップします');
+      return;
+    }
+    // 既存のwebhookを取得して重複登録を防ぐ
+    const listOpts = {
+      hostname: 'api.github.com',
+      path: `/repos/${REPO}/hooks`,
+      method: 'GET',
+      headers: { 'Authorization': `token ${GITHUB_TOKEN}`, 'User-Agent': 'torihada-server', 'Accept': 'application/vnd.github.v3+json' }
+    };
+    const listReq = https.request(listOpts, (res) => {
+      let body = '';
+      res.on('data', d => body += d);
+      res.on('end', () => {
+        try {
+          const hooks = JSON.parse(body);
+          // 古いwebhookを削除
+          if (Array.isArray(hooks)) {
+            hooks.forEach(hook => {
+              if (hook.config && hook.config.url && hook.config.url.includes('/webhook/github')) {
+                const delOpts = { ...listOpts, path: `/repos/${REPO}/hooks/${hook.id}`, method: 'DELETE' };
+                https.request(delOpts, r => r.resume()).end();
+              }
+            });
+          }
+        } catch(e) {}
+        // 新しいwebhookを登録
+        const payload = JSON.stringify({
+          name: 'web',
+          active: true,
+          events: ['push'],
+          config: { url: webhookUrl, content_type: 'json', secret: WEBHOOK_SECRET, insecure_ssl: '0' }
+        });
+        const createOpts = {
+          hostname: 'api.github.com',
+          path: `/repos/${REPO}/hooks`,
+          method: 'POST',
+          headers: { 'Authorization': `token ${GITHUB_TOKEN}`, 'User-Agent': 'torihada-server', 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+        };
+        const createReq = https.request(createOpts, (res2) => {
+          let b = '';
+          res2.on('data', d => b += d);
+          res2.on('end', () => {
+            if (res2.statusCode === 201) {
+              console.log(`✅ GitHub Webhook 登録完了 → ${webhookUrl}`);
+              console.log(`   pushするたびに自動でgit pullされます！`);
+            } else {
+              console.warn(`⚠️  Webhook登録失敗 (${res2.statusCode}):`, b.substring(0, 100));
+            }
+          });
+        });
+        createReq.on('error', e => console.warn('Webhook登録エラー:', e.message));
+        createReq.write(payload);
+        createReq.end();
+      });
+    });
+    listReq.on('error', e => console.warn('Webhook一覧取得エラー:', e.message));
+    listReq.end();
   }
 
   // ngrok設定ファイルにauth_tokenとstatic_domainがあればngrokを使用、なければcloudflaredにフォールバック
