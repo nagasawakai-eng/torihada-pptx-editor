@@ -914,6 +914,35 @@ app.get('/api/slides', (req, res) => {
   }
 });
 
+// GitHubへ自動コミット＆プッシュ
+function pushToGithub(filePath, commitMessage) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return; // トークン未設定なら何もしない
+  const { execFile } = require('child_process');
+  const relPath = path.relative(__dirname, filePath);
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'TORIHADA Editor',
+    GIT_AUTHOR_EMAIL: 'editor@torihada.co.jp',
+    GIT_COMMITTER_NAME: 'TORIHADA Editor',
+    GIT_COMMITTER_EMAIL: 'editor@torihada.co.jp',
+  };
+  // remote に token を埋め込む
+  const remoteUrl = `https://${token}@github.com/nagasawakai-eng/torihada-pptx-editor.git`;
+  execFile('git', ['remote', 'set-url', 'origin', remoteUrl], { cwd: __dirname, env }, () => {
+    execFile('git', ['add', relPath], { cwd: __dirname, env }, (err) => {
+      if (err) return console.error('git add error:', err.message);
+      execFile('git', ['commit', '-m', commitMessage, '--allow-empty'], { cwd: __dirname, env }, (err2) => {
+        if (err2) return console.error('git commit error:', err2.message);
+        execFile('git', ['push', 'origin', 'master'], { cwd: __dirname, env }, (err3) => {
+          if (err3) console.error('git push error:', err3.message);
+          else console.log('✅ GitHubにプッシュしました:', commitMessage);
+        });
+      });
+    });
+  });
+}
+
 // API: 変更を保存
 app.post('/api/save', requireEditor, (req, res) => {
   const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
@@ -923,6 +952,9 @@ app.post('/api/save', requireEditor, (req, res) => {
     if (!fs.existsSync(ctx.backupPath)) fs.copyFileSync(ctx.pptxPath, ctx.backupPath);
     const newPptxBuffer = applyEdits(ctx.pptxPath, edits);
     fs.writeFileSync(ctx.pptxPath, newPptxBuffer);
+    // GitHubへ自動プッシュ（バックグラウンド）
+    const weekLabel = ctx.week?.label || getWeekId(req);
+    pushToGithub(ctx.pptxPath, `${weekLabel} テキスト更新（エディターから保存）`);
     res.json({ success: true, message: '保存しました' });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
