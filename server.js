@@ -1,3 +1,4 @@
+require('dotenv').config(); // .env ファイルを読み込む
 const express = require('express');
 const AdmZip = require('adm-zip');
 const path = require('path');

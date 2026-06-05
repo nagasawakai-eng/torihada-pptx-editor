@@ -19,3 +19,4 @@ dist/
 
 # Local config (use Railway environment variables instead)
 auth.config.json
+.env
