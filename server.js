@@ -1055,6 +1055,143 @@ app.post('/api/fishaudio/tts', async (req, res) => {
   }
 });
 
+// ====== イラスト推奨・挿入システム ======
+
+const ILLUST_CATALOG_PATH = path.join(__dirname, 'illustrations.catalog.json');
+
+function loadIllustCatalog() {
+  try {
+    return JSON.parse(fs.readFileSync(ILLUST_CATALOG_PATH, 'utf8')).illustrations;
+  } catch(e) {
+    return [];
+  }
+}
+
+// スライドテキストをフラット化
+function getSlideText(pptxPath, slideIndex) {
+  try {
+    const slides = parsePptx(pptxPath);
+    const slide = slides[slideIndex];
+    if (!slide) return '';
+    return slide.shapes.flatMap(s => s.paragraphs.flatMap(p => p.runs.map(r => r.text))).join(' ');
+  } catch(e) {
+    return '';
+  }
+}
+
+// イラスト推奨API
+app.get('/api/illustrations/suggest', (req, res) => {
+  const { slideIndex, weekId } = req.query;
+  const catalog = loadIllustCatalog();
+  if (!catalog.length) return res.json({ illustrations: [] });
+
+  const ctx = resolveWeekPaths(weekId || 'week1');
+  const slideText = (ctx && ctx.exists && slideIndex !== undefined)
+    ? getSlideText(ctx.pptxPath, parseInt(slideIndex))
+    : '';
+
+  const scored = catalog.map(ill => {
+    const score = ill.keywords.reduce((s, kw) => s + (slideText.includes(kw) ? 2 : 0), 0)
+      + (slideText.length === 0 ? 0 : 0);
+    return { ...ill, score, thumbnailUrl: `https://loosedrawing.com/assets/media/illustrations/png/${ill.id}.png` };
+  });
+
+  // スコア順 → ランダム要素を加えて多様性確保
+  const sorted = scored.sort((a, b) => b.score - a.score);
+  const top = sorted.slice(0, 6);
+  // スコアが低い場合は多様なカテゴリから補完
+  if (top.every(i => i.score === 0)) {
+    const shuffled = catalog.sort(() => Math.random() - 0.5).slice(0, 6);
+    return res.json({ illustrations: shuffled.map(i => ({ ...i, thumbnailUrl: `https://loosedrawing.com/assets/media/illustrations/png/${i.id}.png` })) });
+  }
+
+  res.json({ illustrations: top });
+});
+
+// イラストをPPTXスライドに挿入するAPI
+app.post('/api/illustrations/apply', requireEditor, async (req, res) => {
+  const { illustrationId, slideIndex, weekId } = req.body;
+  if (illustrationId === undefined || slideIndex === undefined) {
+    return res.status(400).json({ error: 'illustrationId と slideIndex は必須です' });
+  }
+
+  const ctx = resolveWeekPaths(weekId || 'week1');
+  if (!ctx || !ctx.exists) return res.status(404).json({ error: 'PPTXファイルがありません' });
+
+  try {
+    // Loose Drawing から画像ダウンロード
+    const imgUrl = `https://loosedrawing.com/assets/media/illustrations/png/${illustrationId}.png`;
+    const imgResp = await fetch(imgUrl);
+    if (!imgResp.ok) throw new Error(`イラストのダウンロードに失敗しました (${imgResp.status})`);
+    const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
+
+    const zip = new AdmZip(ctx.pptxPath);
+
+    // 次のメディア番号を決定
+    const mediaEntries = zip.getEntries().filter(e => e.entryName.match(/^ppt\/media\/image\d+\.(png|jpg|jpeg)$/i));
+    const maxImgNum = mediaEntries.reduce((max, e) => {
+      const m = e.entryName.match(/image(\d+)\./);
+      return m ? Math.max(max, parseInt(m[1])) : max;
+    }, 0);
+    const newImgNum = maxImgNum + 1;
+    const newImgName = `ppt/media/image${newImgNum}.png`;
+
+    // 画像をzipに追加
+    zip.addFile(newImgName, imgBuffer);
+
+    // relsファイル更新
+    const slideNum = parseInt(slideIndex) + 1;
+    const relsPath = `ppt/slides/_rels/slide${slideNum}.xml.rels`;
+    const relsEntry = zip.getEntry(relsPath);
+    let relsXml = relsEntry
+      ? relsEntry.getData().toString('utf8')
+      : `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+
+    const rIdMatches = [...relsXml.matchAll(/Id="rId(\d+)"/g)];
+    const maxRId = rIdMatches.reduce((max, m) => Math.max(max, parseInt(m[1])), 0);
+    const newRId = `rId${maxRId + 1}`;
+
+    const newRel = `<Relationship Id="${newRId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${newImgNum}.png"/>`;
+    relsXml = relsXml.replace('</Relationships>', `${newRel}</Relationships>`);
+
+    if (relsEntry) {
+      zip.updateFile(relsPath, Buffer.from(relsXml));
+    } else {
+      zip.addFile(relsPath, Buffer.from(relsXml));
+    }
+
+    // スライドXMLに画像シェイプを追加
+    const slidePath = `ppt/slides/slide${slideNum}.xml`;
+    const slideEntry = zip.getEntry(slidePath);
+    if (!slideEntry) throw new Error(`スライド${slideNum}が見つかりません`);
+    let slideXml = slideEntry.getData().toString('utf8');
+
+    // 最大シェイプIDを取得
+    const idMatches = [...slideXml.matchAll(/\bid="(\d+)"/g)];
+    const maxId = idMatches.reduce((max, m) => Math.max(max, parseInt(m[1])), 100);
+    const newShapeId = maxId + 1;
+
+    // 右下エリアに配置（スライドサイズ: 約12192000 x 6858000 EMU）
+    const pos = { x: 7200000, y: 1500000, cx: 2400000, cy: 2400000 };
+
+    const picXml = `<p:pic><p:nvPicPr><p:cNvPr id="${newShapeId}" name="Illust_${illustrationId}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${newRId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${pos.x}" y="${pos.y}"/><a:ext cx="${pos.cx}" cy="${pos.cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln><a:noFill/></a:ln></p:spPr></p:pic>`;
+
+    slideXml = slideXml.replace('</p:spTree>', picXml + '</p:spTree>');
+    zip.updateFile(slidePath, Buffer.from(slideXml));
+
+    // 保存
+    zip.writeZip(ctx.pptxPath);
+
+    // GitHubへ自動プッシュ
+    pushToGithub(ctx.pptxPath, `✏️ スライド${slideNum}にイラスト${illustrationId}を挿入 [${weekId || 'week1'}]`);
+
+    res.json({ success: true, message: `スライド${slideNum}にイラストを挿入しました` });
+  } catch(e) {
+    console.error('イラスト挿入エラー:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====== VOICEVOX プロキシ ======
 function vvPost(path, headers, body) {
   return new Promise((resolve, reject) => {
