@@ -597,20 +597,44 @@ textarea.run-input.changed {
 /* 推奨イラストパネル */
 .illust-panel {
   border-top: 2px solid #e2e8f0; background: #fafafa;
-  flex-shrink: 0;
+  flex-shrink: 0; display: flex; flex-direction: column;
 }
 .illust-panel-header {
-  padding: 7px 14px; background: #f0fdf4;
+  padding: 6px 10px; background: #f0fdf4;
   border-bottom: 1px solid #bbf7d0;
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
 }
 .illust-panel-title {
   font-size: 11px; font-weight: 700; color: #16a34a;
-  letter-spacing: 0.06em; text-transform: uppercase;
+  letter-spacing: 0.06em; white-space: nowrap;
 }
+.illust-search-input {
+  flex: 1; padding: 3px 8px; font-size: 11px;
+  border: 1px solid #bbf7d0; border-radius: 12px;
+  background: white; color: #374151; outline: none;
+  min-width: 0;
+}
+.illust-search-input:focus { border-color: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,0.15); }
+.illust-search-input::placeholder { color: #9ca3af; }
+.illust-tabs {
+  display: flex; gap: 2px; padding: 4px 10px 0;
+  border-bottom: 1px solid #e2e8f0; background: #f9fafb;
+  flex-shrink: 0;
+}
+.illust-tab {
+  padding: 4px 10px; font-size: 10px; font-weight: 700;
+  border: none; background: transparent; cursor: pointer;
+  color: #9ca3af; border-radius: 6px 6px 0 0;
+  transition: all 0.15s; white-space: nowrap;
+}
+.illust-tab.active { background: white; color: #16a34a; border: 1px solid #e2e8f0; border-bottom: 1px solid white; margin-bottom: -1px; }
+.illust-tab:hover:not(.active) { color: #4ade80; background: #f0fdf4; }
 .illust-grid {
   display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 6px; padding: 8px 10px;
+  overflow-y: auto; flex: 1; min-height: 0;
+  max-height: 420px;
 }
 .illust-thumb {
   border: 2px solid #e2e8f0; border-radius: 8px;
@@ -622,6 +646,7 @@ textarea.run-input.changed {
 .illust-thumb:hover { border-color: #68d391; transform: scale(1.03); box-shadow: 0 2px 8px rgba(22,163,74,0.2); }
 .illust-thumb:active { cursor: grabbing; }
 .illust-thumb.dragging { opacity: 0.4; border-color: #16a34a; }
+.illust-thumb.lazy-placeholder img { filter: blur(2px); opacity: 0.3; }
 
 /* ドロップゾーン（スライドプレビュー） */
 .preview-img-wrap.drag-over {
@@ -1289,20 +1314,29 @@ textarea.run-input.changed {
     <div id="previewNote" class="preview-note" style="display:none;">
       ✏️ 編集モード：テキスト枠を<strong>ダブルクリック</strong>で文字編集 / ドラッグで移動 / ハンドルでリサイズ
     </div>
-    <!-- 推奨イラストパネル -->
+    <!-- イラストパネル（推奨 + 全件 + 検索） -->
     <div class="illust-panel" id="illustPanel" style="display:none;">
       <div class="illust-panel-header">
-        <span class="illust-panel-title">🎨 推奨イラスト</span>
-        <span style="font-size:10px;color:#86efac;" id="illustSlideLabel"></span>
+        <span class="illust-panel-title">🎨 イラスト</span>
+        <input type="search" id="illustSearch" class="illust-search-input"
+               placeholder="🔍 キーワード検索..."
+               oninput="onIllustSearch(this.value)">
+        <button onclick="refreshIllustSuggestions()"
+          style="padding:3px 7px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:11px;cursor:pointer;color:#16a34a;font-weight:700;flex-shrink:0;"
+          title="再読み込み">🔄</button>
+      </div>
+      <!-- タブ -->
+      <div class="illust-tabs">
+        <button class="illust-tab active" id="tabRecommend" onclick="switchIllustTab('recommend')">⭐ おすすめ</button>
+        <button class="illust-tab" id="tabAll" onclick="switchIllustTab('all')">📋 全て</button>
+        <span id="illustCountBadge" style="margin-left:auto;font-size:9px;color:#9ca3af;align-self:center;padding-right:4px;"></span>
       </div>
       <div id="illustGrid" class="illust-grid">
         <div class="illust-loading">⏳ 読み込み中...</div>
       </div>
       <div class="illust-apply-area" style="justify-content:space-between;align-items:center;">
         <span style="font-size:10px;color:#16a34a;font-weight:600;">👆 ドラッグ＆ドロップで配置</span>
-        <button onclick="refreshIllustSuggestions()"
-          style="padding:5px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:11px;cursor:pointer;color:#16a34a;font-weight:700;flex-shrink:0;"
-          title="再読み込み">🔄</button>
+        <span id="illustSlideLabel" style="font-size:10px;color:#86efac;"></span>
       </div>
     </div>
   </div>
@@ -3273,54 +3307,194 @@ async function toggleScriptAudio() {
   }
 }
 
-// ====== イラスト推奨システム ======
+// ====== イラストシステム（全件 + 検索 + 遅延読み込み） ======
 let selectedIllustId = null;
+let _illustCurrentTab = 'recommend'; // 'recommend' | 'all'
+let _illustAllData = null;           // 全件キャッシュ
+let _illustRecommendData = null;     // 推奨キャッシュ
+let _illustSearchTimer = null;
+let _illustObserver = null;          // IntersectionObserver
+let _currentSlideIdx = 0;
 
+// タブ切り替え
+function switchIllustTab(tab) {
+  _illustCurrentTab = tab;
+  document.getElementById('tabRecommend').className = 'illust-tab' + (tab === 'recommend' ? ' active' : '');
+  document.getElementById('tabAll').className = 'illust-tab' + (tab === 'all' ? ' active' : '');
+  const searchVal = (document.getElementById('illustSearch') || {}).value || '';
+  if (tab === 'recommend') {
+    renderIllustGrid(_illustRecommendData || [], searchVal);
+  } else {
+    if (!_illustAllData) {
+      loadAllIllustrations(searchVal);
+    } else {
+      renderIllustGrid(_illustAllData, searchVal);
+    }
+  }
+}
+
+// 検索インプット変更時
+function onIllustSearch(val) {
+  clearTimeout(_illustSearchTimer);
+  _illustSearchTimer = setTimeout(() => {
+    if (_illustCurrentTab === 'recommend') {
+      renderIllustGrid(_illustRecommendData || [], val);
+    } else {
+      if (!_illustAllData) {
+        loadAllIllustrations(val);
+      } else {
+        renderIllustGrid(_illustAllData, val);
+      }
+    }
+  }, 250);
+}
+
+// 全件読み込み
+async function loadAllIllustrations(searchVal) {
+  const grid = document.getElementById('illustGrid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="illust-loading">⏳ 全イラスト読み込み中...</div>';
+  try {
+    const res = await fetch('/api/illustrations/all');
+    const data = await res.json();
+    _illustAllData = data.illustrations || [];
+    renderIllustGrid(_illustAllData, searchVal || '');
+  } catch(e) {
+    grid.innerHTML = '<div class="illust-loading" style="color:#e53e3e;">読み込み失敗</div>';
+  }
+}
+
+// パネル表示・推奨ロード
 async function loadIllustrationSuggestions(slideIdx) {
   const panel = document.getElementById('illustPanel');
   const grid = document.getElementById('illustGrid');
   const label = document.getElementById('illustSlideLabel');
   if (!panel || !grid) return;
 
-  panel.style.display = 'block';
+  _currentSlideIdx = slideIdx;
+  panel.style.display = 'flex';
+  panel.style.flexDirection = 'column';
   selectedIllustId = null;
-  const applyBtn = document.getElementById('illustApplyBtn');
-  if (applyBtn) applyBtn.disabled = true;
 
   const slide = allSlides[slideIdx];
   if (slide && label) label.textContent = `Slide ${slide.slideNum}`;
+
+  // 推奨タブに切り替え
+  _illustCurrentTab = 'recommend';
+  document.getElementById('tabRecommend').className = 'illust-tab active';
+  document.getElementById('tabAll').className = 'illust-tab';
+  // タブのカウントバッジ更新
+  if (_illustAllData) {
+    const badge = document.getElementById('illustCountBadge');
+    if (badge) badge.textContent = `全${_illustAllData.length.toLocaleString()}件`;
+  }
 
   grid.innerHTML = '<div class="illust-loading">⏳ 推奨イラストを検索中...</div>';
 
   try {
     const res = await fetch(`/api/illustrations/suggest?slideIndex=${slideIdx}&weekId=${currentWeekId}`);
     const data = await res.json();
-    if (!data.illustrations || data.illustrations.length === 0) {
-      grid.innerHTML = '<div class="illust-loading" style="color:#e53e3e;">イラストが見つかりません</div>';
-      return;
+    _illustRecommendData = data.illustrations || [];
+    renderIllustGrid(_illustRecommendData, '');
+
+    // バックグラウンドで全件もプリロード（タブ切り替え高速化）
+    if (!_illustAllData) {
+      fetch('/api/illustrations/all')
+        .then(r => r.json())
+        .then(d => {
+          _illustAllData = d.illustrations || [];
+          const badge = document.getElementById('illustCountBadge');
+          if (badge) badge.textContent = `全${_illustAllData.length.toLocaleString()}件`;
+          const tabAll = document.getElementById('tabAll');
+          if (tabAll) tabAll.textContent = `📋 全て (${_illustAllData.length.toLocaleString()})`;
+        })
+        .catch(() => {});
     }
-    renderIllustGrid(data.illustrations);
   } catch(e) {
     grid.innerHTML = `<div class="illust-loading" style="color:#e53e3e;">読み込み失敗</div>`;
   }
 }
 
-function renderIllustGrid(illustrations) {
+// 再読み込み
+function refreshIllustSuggestions() {
+  _illustAllData = null;
+  _illustRecommendData = null;
+  loadIllustrationSuggestions(_currentSlideIdx);
+}
+
+// グリッドレンダリング（検索フィルタ + 遅延読み込み）
+function renderIllustGrid(illustrations, searchVal) {
   const grid = document.getElementById('illustGrid');
-  grid.innerHTML = illustrations.map(ill => `
-    <div class="illust-thumb" id="illust-${ill.id}"
+  if (!grid) return;
+
+  // フィルタリング
+  let filtered = illustrations;
+  if (searchVal && searchVal.trim()) {
+    const terms = searchVal.trim().split(/\s+/).filter(Boolean);
+    filtered = illustrations.filter(ill => {
+      const haystack = ill.title + ' ' + (ill.keywords || []).join(' ');
+      return terms.every(t => haystack.includes(t));
+    });
+  }
+
+  // バッジ更新
+  const badge = document.getElementById('illustCountBadge');
+  if (badge) {
+    if (searchVal && searchVal.trim()) {
+      badge.textContent = `${filtered.length}件ヒット`;
+    } else if (_illustAllData) {
+      badge.textContent = `全${_illustAllData.length.toLocaleString()}件`;
+    }
+  }
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div class="illust-loading" style="grid-column:1/-1;color:#9ca3af;">
+      「${searchVal}」に該当するイラストが見つかりません</div>`;
+    return;
+  }
+
+  // Observer停止（前回の）
+  if (_illustObserver) { _illustObserver.disconnect(); _illustObserver = null; }
+
+  // HTMLレンダリング（500件まで即時、残りは遅延）
+  const PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%23f0fdf4'/%3E%3C/svg%3E";
+  const BATCH = 200; // 最初の200件はsrc直接、残りはdata-src
+  grid.innerHTML = filtered.map((ill, i) => {
+    const eager = i < BATCH;
+    return `<div class="illust-thumb" id="illust-${ill.id}"
          draggable="true"
          ondragstart="handleIllustDragStart(event, ${ill.id})"
          ondragend="handleIllustDragEnd(event)"
-         title="ドラッグしてスライドに配置: ${ill.title}">
-      <img src="${ill.thumbnailUrl}"
-           alt="${ill.title}"
-           loading="lazy"
+         title="${escHtml(ill.title)}">
+      <img ${eager ? `src="${ill.thumbnailUrl}"` : `src="${PLACEHOLDER}" data-src="${ill.thumbnailUrl}"`}
+           alt="${escHtml(ill.title)}"
            draggable="false"
-           onerror="this.style.opacity='0.3';this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'60\\' height=\\'60\\'><rect width=\\'60\\' height=\\'60\\' fill=\\'%23f0fdf4\\'/><text x=\\'50%25\\' y=\\'50%25\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'24\\'>🎨</text></svg>'">
-      <div class="illust-thumb-label">${ill.title}</div>
-    </div>
-  `).join('');
+           onerror="this.dataset.err='1';this.src='${PLACEHOLDER}';this.style.opacity='0.2'">
+      <div class="illust-thumb-label">${escHtml(ill.title)}</div>
+    </div>`;
+  }).join('');
+
+  // IntersectionObserver で遅延読み込み
+  const lazyImgs = grid.querySelectorAll('img[data-src]');
+  if (lazyImgs.length > 0) {
+    _illustObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          if (img.dataset.src && !img.dataset.err) {
+            img.src = img.dataset.src;
+            delete img.dataset.src;
+          }
+          _illustObserver.unobserve(img);
+        }
+      });
+    }, { root: grid, rootMargin: '100px', threshold: 0 });
+    lazyImgs.forEach(img => _illustObserver.observe(img));
+  }
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ドラッグ開始

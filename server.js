@@ -1092,22 +1092,24 @@ app.get('/illust-cache/:id.png', async (req, res) => {
   }
 });
 
-// 起動時に全カタログ画像をバックグラウンドでプリキャッシュ
+// 起動時プリキャッシュ: 推奨カタログ上位45件のみ（オンデマンドキャッシュに切り替え済み）
 function preCacheIllustrations() {
   const catalog = loadIllustCatalog();
+  // 全1800件のプリキャッシュは不要。推奨候補上位45件のみキャッシュ
+  const top45 = catalog.slice(0, 45);
   let idx = 0;
   function next() {
-    if (idx >= catalog.length) { console.log('✅ イラストキャッシュ完了'); return; }
-    const ill = catalog[idx++];
+    if (idx >= top45.length) { console.log('✅ イラスト初期キャッシュ完了 (top45)'); return; }
+    const ill = top45[idx++];
     const localPath = path.join(ILLUST_CACHE_DIR, `${ill.id}.png`);
     if (fs.existsSync(localPath)) { next(); return; }
     fetch(`https://loosedrawing.com/assets/media/illustrations/png/${ill.id}.png`)
       .then(r => r.ok ? r.arrayBuffer() : null)
       .then(buf => { if (buf) fs.writeFileSync(localPath, Buffer.from(buf)); })
       .catch(() => {})
-      .finally(() => setTimeout(next, 200)); // 0.2秒間隔でDL（レート制限対策）
+      .finally(() => setTimeout(next, 300));
   }
-  setTimeout(next, 3000); // サーバー起動3秒後に開始
+  setTimeout(next, 5000); // サーバー起動5秒後に開始
 }
 preCacheIllustrations();
 
@@ -1159,6 +1161,32 @@ app.get('/api/illustrations/suggest', (req, res) => {
   }
 
   res.json({ illustrations: top });
+});
+
+// 全イラストカタログAPI（検索・全一覧用）
+app.get('/api/illustrations/all', (req, res) => {
+  const catalog = loadIllustCatalog();
+  const toUrl = (id) => `/illust-cache/${id}.png`;
+  // キーワード検索フィルター
+  const q = (req.query.q || '').trim();
+  let filtered = catalog;
+  if (q) {
+    const terms = q.split(/\s+/).filter(Boolean);
+    filtered = catalog.filter(ill => {
+      const haystack = ill.title + ' ' + (ill.keywords || []).join(' ');
+      return terms.every(t => haystack.includes(t));
+    });
+  }
+  res.json({
+    total: catalog.length,
+    count: filtered.length,
+    illustrations: filtered.map(i => ({
+      id: i.id,
+      title: i.title,
+      keywords: i.keywords || [],
+      thumbnailUrl: toUrl(i.id)
+    }))
+  });
 });
 
 // イラストをPPTXスライドに挿入するAPI
