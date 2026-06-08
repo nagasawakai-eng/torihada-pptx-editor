@@ -1012,8 +1012,20 @@ app.get('/api/fishaudio/voices', async (req, res) => {
 app.post('/api/fishaudio/tts', async (req, res) => {
   const apiKey = getFishAudioKey();
   if (!apiKey) return res.status(500).json({ error: 'FISHAUDIO_API_KEY が設定されていません' });
-  const { text, voiceId, speed = 1.0 } = req.body;
-  if (!text) return res.status(400).json({ error: 'text は必須です' });
+  const { text: rawText, voiceId, speed = 1.0 } = req.body;
+  if (!rawText) return res.status(400).json({ error: 'text は必須です' });
+
+  // 読み替えテーブル（英単語→日本語ヨミ）
+  const readingMap = {
+    'TORIHADA': 'とりはだ',
+    'Torihada': 'とりはだ',
+    'torihada': 'とりはだ',
+  };
+  let text = rawText;
+  for (const [word, reading] of Object.entries(readingMap)) {
+    text = text.split(word).join(reading);
+  }
+
   try {
     const body = JSON.stringify({
       text,
