@@ -2911,7 +2911,8 @@ async function loadIllustrationSuggestions(slideIdx) {
 
   panel.style.display = 'block';
   selectedIllustId = null;
-  document.getElementById('illustApplyBtn').disabled = true;
+  const applyBtn = document.getElementById('illustApplyBtn');
+  if (applyBtn) applyBtn.disabled = true;
 
   const slide = allSlides[slideIdx];
   if (slide && label) label.textContent = `Slide ${slide.slideNum}`;
