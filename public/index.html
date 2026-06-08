@@ -856,7 +856,8 @@ textarea.run-input.changed {
 }
 .edit-el:hover { border-color: rgba(0,120,215,0.55); background: rgba(0,120,215,0.03); }
 /* テキスト要素ホバー時：ダブルクリックのヒントを表示 */
-.edit-el[data-type="text"]:hover::after {
+.edit-el[data-type="text"]:hover::after,
+.edit-el[data-type="shape"]:hover::after {
   content: '✏️ ダブルクリックで編集';
   position: absolute;
   bottom: calc(100% + 4px);
@@ -2381,9 +2382,9 @@ function onDragEnd(e) {
 // ====== インラインテキストエディタ（ダブルクリックで直接編集） ======
 function showInlineTextEditor(elementIdx) {
   const el = layoutElements[elementIdx];
-  // テキスト要素以外（画像など）はスキップ
   if (!el) return;
-  if (el.type && el.type !== 'text') return;
+  // picture要素（画像）はテキスト編集対象外
+  if (el.type === 'picture') return;
 
   const sc = getScale(); if (!sc) return;
 
@@ -2576,16 +2577,42 @@ async function saveLayoutEdits() {
   const btn = document.getElementById('layoutSaveBtn');
   btn.textContent = '保存中...'; btn.disabled = true;
   try {
+    // ① 位置データをPPTXに書き込む
     const res = await fetch(`/api/update-positions?weekId=${currentWeekId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ entryName: layoutEntryName, updates: layoutElements })
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
     layoutDirty = false;
-    btn.textContent = '✅ 保存済';
-    setTimeout(() => { btn.textContent = '💾 保存'; btn.disabled = false; }, 2500);
+    btn.textContent = '🔄 プレビュー更新中...'; btn.disabled = true;
+
+    // ② プレビューPNGを再生成（位置変更を画像に反映）
+    try {
+      const prevRes = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
+        method: 'POST',
+        headers: authHeaders()
+      });
+      if (prevRes.ok) {
+        // キャッシュバスターつきで現在スライドのプレビューを再読み込み
+        const bust = Date.now();
+        const slide = allSlides[currentSlideIdx];
+        const num = String(slide.slideNum).padStart(2, '0');
+        const imgEl = document.getElementById('previewImg');
+        if (imgEl) {
+          imgEl.src = `/preview/${currentWeekId}/slide_${num}.png?v=${bust}`;
+        }
+        btn.textContent = '✅ 保存済';
+        showToast('✅ 位置を保存してプレビューを更新しました');
+      } else {
+        btn.textContent = '✅ 保存済（要手動更新）';
+        showToast('✅ 位置を保存しました（プレビューは設定タブから再生成できます）');
+      }
+    } catch(pe) {
+      btn.textContent = '✅ 保存済（要手動更新）';
+    }
+    setTimeout(() => { btn.textContent = '💾 保存'; btn.disabled = false; }, 3000);
   } catch(e) {
     alert('保存エラー: ' + e.message);
     btn.textContent = '💾 保存 ●'; btn.disabled = false;
