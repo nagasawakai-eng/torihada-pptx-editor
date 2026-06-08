@@ -452,9 +452,9 @@ textarea.run-input.changed {
 
 /* ====== 右パネル（プレビュー） ====== */
 .preview-panel {
-  width: 340px;
+  width: 310px;
   min-width: 180px;
-  max-width: 700px;
+  max-width: 600px;
   background: white;
   border-left: none;
   display: flex;
@@ -508,8 +508,77 @@ textarea.run-input.changed {
   flex-shrink: 0;
 }
 
-/* 台本エリア（プレビュー下部） */
-.preview-script-panel {
+/* ====== 台本サイドパネル（4列目） ====== */
+.script-side-panel {
+  width: 260px;
+  min-width: 220px;
+  border-left: 1px solid #e2e8f0;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.script-side-header {
+  padding: 10px 12px 8px;
+  background: #1a1a2e;
+  color: white;
+  flex-shrink: 0;
+}
+.script-side-header-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.script-side-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #a0aec0;
+}
+.script-side-slide-badge {
+  background: #e94560; color: white; font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 12px;
+}
+.script-side-title {
+  font-size: 12px; color: #e2e8f0; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+.script-side-audio {
+  display: flex; align-items: center; gap: 4px;
+}
+.script-side-body {
+  flex: 1; overflow: hidden; padding: 8px; display: flex; flex-direction: column;
+}
+.script-side-textarea {
+  flex: 1; width: 100%; padding: 10px;
+  border: 1.5px solid #e2e8f0; border-radius: 8px;
+  font-size: 12px; font-family: inherit; line-height: 1.8;
+  resize: none; background: #fafafa; box-sizing: border-box;
+  color: #2d3748;
+}
+.script-side-textarea:focus {
+  outline: none; border-color: #e94560; background: white;
+}
+.script-side-footer {
+  padding: 7px 10px; border-top: 1px solid #e2e8f0;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; background: #f7fafc; gap: 6px;
+}
+.script-side-nav {
+  padding: 6px 10px; border-top: 1px solid #e2e8f0;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.script-side-nav button {
+  padding: 4px 10px; background: #edf2f7; border: none;
+  border-radius: 6px; font-size: 11px; cursor: pointer; color: #4a5568; font-weight: 600;
+}
+.script-side-nav button:hover { background: #e2e8f0; }
+
+/* 旧・台本エリア（プレビュー下部）は非表示に */
+.preview-script-panel { display: none !important; }
+
+/* 台本エリア（プレビュー下部） ※後方互換で残す */
+.preview-script-panel-legacy {
   flex: 1; display: flex; flex-direction: column;
   border-top: 2px solid #e2e8f0; overflow: hidden; min-height: 120px;
 }
@@ -1058,7 +1127,7 @@ textarea.run-input.changed {
       <button class="tab-btn active" id="tab-edit" onclick="switchTab('edit')">
         ✏️ テキスト編集
       </button>
-      <button class="tab-btn" id="tab-script" onclick="switchTab('script')">
+      <button class="tab-btn" id="tab-script" onclick="switchTab('script')" style="display:none;">
         🎙️ 台本
       </button>
       <button class="tab-btn" id="tab-changes" onclick="switchTab('changes')">
@@ -1155,35 +1224,6 @@ textarea.run-input.changed {
       <div id="illustDropCursor"></div>
     </div>
     <div id="layoutInfoBar"></div>
-    <!-- 台本エリア -->
-    <div class="preview-script-panel" id="previewScriptPanel">
-      <div class="preview-script-header">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <span style="font-size:11px;font-weight:700;color:#718096;letter-spacing:0.06em;text-transform:uppercase;">🎙️ 台本</span>
-          <span style="font-size:10px;color:#a0aec0;" id="previewScriptSlide"></span>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <select id="fishVoiceSelect"
-            style="font-size:10px;padding:3px 6px;border:1px solid #e2e8f0;border-radius:6px;
-                   color:#4a5568;background:white;max-width:110px;cursor:pointer;">
-            <option value="">ボイス読込中...</option>
-          </select>
-          <button id="fishPlayBtn" onclick="toggleScriptAudio()"
-            style="padding:4px 10px;background:#7c3aed;color:white;border:none;border-radius:6px;
-                   font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">
-            ▶ 読み上げ
-          </button>
-          <button onclick="switchTab('script')"
-            style="font-size:10px;color:#e94560;background:none;border:none;cursor:pointer;font-weight:700;padding:2px 4px;">
-            ✏️
-          </button>
-        </div>
-      </div>
-      <div class="preview-script-body" id="previewScriptBody">
-        <span style="color:#a0aec0;">スライドを選択すると台本が表示されます</span>
-      </div>
-    </div>
-
     <!-- 推奨イラストパネル -->
     <div class="illust-panel" id="illustPanel" style="display:none;">
       <div class="illust-panel-header">
@@ -1194,11 +1234,57 @@ textarea.run-input.changed {
         <div class="illust-loading">⏳ 読み込み中...</div>
       </div>
       <div class="illust-apply-area" style="justify-content:space-between;align-items:center;">
-        <span style="font-size:10px;color:#16a34a;font-weight:600;">👆 イラストをスライドにドラッグ＆ドロップ</span>
+        <span style="font-size:10px;color:#16a34a;font-weight:600;">👆 ドラッグ＆ドロップで配置</span>
         <button onclick="refreshIllustSuggestions()"
           style="padding:5px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:11px;cursor:pointer;color:#16a34a;font-weight:700;flex-shrink:0;"
-          title="再読み込み">🔄 更新</button>
+          title="再読み込み">🔄</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 台本サイドパネル（4列目） -->
+  <div class="script-side-panel" id="scriptSidePanel">
+    <!-- ヘッダー -->
+    <div class="script-side-header">
+      <div class="script-side-header-top">
+        <span class="script-side-label">🎙️ 台本</span>
+        <span class="script-side-slide-badge" id="scriptSideBadge">Slide 1</span>
+      </div>
+      <div class="script-side-title" id="scriptSideTitle">スライドタイトル</div>
+      <div class="script-side-audio">
+        <select id="fishVoiceSelect"
+          style="flex:1;font-size:10px;padding:3px 6px;border:1px solid #4a5568;border-radius:6px;
+                 color:#e2e8f0;background:#2d3748;cursor:pointer;">
+          <option value="">ボイス読込中...</option>
+        </select>
+        <button id="fishPlayBtn" onclick="toggleScriptAudio()"
+          style="padding:4px 10px;background:#7c3aed;color:white;border:none;border-radius:6px;
+                 font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+          ▶ 読み上げ
+        </button>
+      </div>
+    </div>
+    <!-- テキストエリア -->
+    <div class="script-side-body">
+      <textarea class="script-side-textarea" id="scriptSideTextarea"
+        placeholder="このスライドの台本を入力..."
+        oninput="onScriptSideChange(this)"></textarea>
+    </div>
+    <!-- フッター -->
+    <div class="script-side-footer">
+      <span style="font-size:11px;color:#a0aec0;" id="scriptSideCharCount">0文字</span>
+      <span style="font-size:11px;" id="scriptSideStatus"></span>
+      <button onclick="saveScriptSide()"
+        style="padding:5px 14px;background:#e94560;color:white;border:none;border-radius:7px;
+               font-size:11px;font-weight:700;cursor:pointer;">
+        💾 保存
+      </button>
+    </div>
+    <!-- ナビ -->
+    <div class="script-side-nav">
+      <button onclick="scriptNavPrev()">← 前</button>
+      <span style="font-size:11px;color:#718096;" id="scriptSidePageInfo">-</span>
+      <button onclick="scriptNavNext()">次 →</button>
     </div>
   </div>
 
@@ -1694,7 +1780,7 @@ function renderScriptTab() {
   const title = slide.shapes.find(s => s.isTitle)?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
   const script = allScripts[num] || '';
 
-  // 中央タブの台本エリア更新
+  // 中央タブの台本エリア更新（後方互換）
   const badge = document.getElementById('scriptSlideBadge');
   const titleEl = document.getElementById('scriptSlideTitle');
   const pageEl = document.getElementById('scriptPageInfo');
@@ -1706,20 +1792,62 @@ function renderScriptTab() {
   if (textarea) { textarea.value = script; updateScriptCharCount(); }
   if (statusEl) statusEl.textContent = '';
 
-  // 右パネルの台本プレビュー更新
-  const previewSlide = document.getElementById('previewScriptSlide');
-  const previewBody  = document.getElementById('previewScriptBody');
-  if (previewSlide) previewSlide.textContent = `Slide ${slide.slideNum}`;
-  if (previewBody) {
-    previewBody.innerHTML = script
-      ? escH(script).replace(/\n/g, '<br>')
-      : `<span style="color:#a0aec0;">台本がまだ入力されていません</span>`;
+  // ★ 台本サイドパネル更新
+  const sideBadge    = document.getElementById('scriptSideBadge');
+  const sideTitle    = document.getElementById('scriptSideTitle');
+  const sidePageInfo = document.getElementById('scriptSidePageInfo');
+  const sideTextarea = document.getElementById('scriptSideTextarea');
+  const sideStatus   = document.getElementById('scriptSideStatus');
+  const sideCount    = document.getElementById('scriptSideCharCount');
+  if (sideBadge)    sideBadge.textContent    = `Slide ${slide.slideNum}`;
+  if (sideTitle)    sideTitle.textContent    = title;
+  if (sidePageInfo) sidePageInfo.textContent = `${currentSlideIdx + 1} / ${allSlides.length}`;
+  if (sideTextarea) { sideTextarea.value = script; }
+  if (sideStatus)   sideStatus.textContent   = '';
+  if (sideCount)    sideCount.textContent    = `${script.length}文字`;
+}
+
+// サイドパネル：入力時
+function onScriptSideChange(el) {
+  const len = el.value.length;
+  const count = document.getElementById('scriptSideCharCount');
+  if (count) count.textContent = `${len}文字`;
+  const status = document.getElementById('scriptSideStatus');
+  if (status) { status.textContent = '未保存'; status.style.color = '#f6ad55'; }
+}
+
+// サイドパネル：保存
+async function saveScriptSide() {
+  const slide = allSlides[currentSlideIdx];
+  if (!slide) return;
+  const num = String(slide.slideNum);
+  const textarea = document.getElementById('scriptSideTextarea');
+  const status   = document.getElementById('scriptSideStatus');
+  if (!textarea) return;
+  allScripts[num] = textarea.value;
+  // 中央タブも同期
+  const mainTextarea = document.getElementById('scriptTextarea');
+  if (mainTextarea) mainTextarea.value = textarea.value;
+  try {
+    const res = await fetch('/api/scripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scripts: allScripts })
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (status) { status.textContent = '保存済み ✓'; status.style.color = '#68d391'; }
+      setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+    }
+  } catch(e) {
+    if (status) { status.textContent = 'エラー'; status.style.color = '#fc8181'; }
   }
 }
 
 function updateScriptCharCount() {
-  const len = document.getElementById('scriptTextarea').value.length;
-  document.getElementById('scriptCharCount').textContent = `${len}文字`;
+  const len = document.getElementById('scriptTextarea')?.value?.length || 0;
+  const el = document.getElementById('scriptCharCount');
+  if (el) el.textContent = `${len}文字`;
 }
 
 function onScriptChange(el) {
