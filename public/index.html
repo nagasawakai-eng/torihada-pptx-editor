@@ -854,10 +854,25 @@ textarea.run-input.changed {
   user-select: none;
   transition: border-color 0.08s;
 }
-.edit-el:hover { border-color: rgba(0,120,215,0.55); }
+.edit-el:hover { border-color: rgba(0,120,215,0.55); background: rgba(0,120,215,0.03); }
+/* テキスト要素ホバー時：ダブルクリックのヒントを表示 */
+.edit-el[data-type="text"]:hover::after {
+  content: '✏️ ダブルクリックで編集';
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  background: #0078D7;
+  color: white;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 50;
+}
 .edit-el.selected {
-  border: 1.5px solid #0078D7 !important;
-  background: rgba(0,120,215,0.04) !important;
+  border: 2px solid #0078D7 !important;
+  background: rgba(0,120,215,0.06) !important;
   z-index: 20;
 }
 
@@ -882,36 +897,48 @@ textarea.run-input.changed {
 .rh-sw { bottom:-4px; left:-4px; cursor:sw-resize; }
 .rh-w  { top:calc(50% - 4px); left:-4px; cursor:w-resize; }
 
-/* インラインテキストエディタ（プレビューオーバーレイでダブルクリック編集） */
+/* インラインテキストエディタ（document.body に fixed 配置） */
 .inline-text-editor-wrap {
-  position: absolute;
-  z-index: 100;
+  position: fixed;
+  z-index: 99999;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+  border-radius: 6px;
+  overflow: hidden;
 }
 .inline-text-editor-wrap textarea {
   display: block;
   width: 100%;
-  min-height: 32px;
+  min-height: 40px;
   border: 2.5px solid #0078D7;
-  background: rgba(255,255,255,0.97);
-  padding: 4px 6px;
+  border-bottom: none;
+  background: #ffffff;
+  color: #1a202c;
+  padding: 6px 8px;
   box-sizing: border-box;
   resize: vertical;
   outline: none;
-  font-family: sans-serif;
-  line-height: 1.5;
-  border-radius: 4px 4px 0 0;
-  box-shadow: 0 2px 14px rgba(0,120,215,0.45);
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  border-radius: 6px 6px 0 0;
 }
 .inline-text-editor-hint {
   font-size: 10px;
   color: #fff;
   background: #0078D7;
-  padding: 3px 8px;
-  border-radius: 0 0 4px 4px;
+  padding: 4px 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   user-select: none;
+  white-space: nowrap;
+}
+/* インラインエディタ開いているときの背景ブロッカー */
+.inline-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  background: transparent;
 }
 
 /* 選択中の位置・サイズ情報バー */
@@ -2216,6 +2243,7 @@ function renderLayoutOverlay() {
     const div = document.createElement('div');
     div.className = 'edit-el';
     div.dataset.i = i;
+    if (el.type) div.dataset.type = el.type; // CSS hover ヒントのため
     positionDiv(div, el, sc);
 
     // 8点ハンドル
@@ -2342,20 +2370,27 @@ function onDragMove(e) {
   showInfo(el);
 }
 
-function onDragEnd() { dragInfo = null; }
+function onDragEnd(e) {
+  if (dragInfo && layoutDirty) {
+    // ドラッグ後に保存を促す
+    showToast('📌 位置を変更しました → 💾 保存ボタンで確定');
+  }
+  dragInfo = null;
+}
 
 // ====== インラインテキストエディタ（ダブルクリックで直接編集） ======
 function showInlineTextEditor(elementIdx) {
   const el = layoutElements[elementIdx];
-  if (!el || el.type !== 'text') return;
+  // テキスト要素以外（画像など）はスキップ
+  if (!el) return;
+  if (el.type && el.type !== 'text') return;
 
   const sc = getScale(); if (!sc) return;
-  const overlay = document.getElementById('layoutOverlay');
 
-  // 既存のインラインエディタをすべて閉じる
-  overlay.querySelectorAll('.inline-text-editor-wrap').forEach(w => w.remove());
+  // 既存エディタ＆バックドロップを削除
+  document.querySelectorAll('.inline-text-editor-wrap, .inline-editor-backdrop').forEach(w => w.remove());
 
-  // 現在の編集テキストを取得（pendingChanges優先）
+  // 現在のテキストを取得（pendingChanges優先）
   const slide = allSlides[currentSlideIdx];
   const shape = slide && slide.shapes.find(s => s.name === el.name);
   let currentText = el.text || '';
@@ -2368,18 +2403,36 @@ function showInlineTextEditor(elementIdx) {
     ).join('\n');
   }
 
-  const left   = Math.round(el.x  * sc.sx);
-  const top    = Math.round(el.y  * sc.sy);
-  const width  = Math.round(el.cx * sc.sx);
-  const height = Math.round(el.cy * sc.sy);
-  const fsize  = Math.max(10, Math.round(13 * sc.sx));
+  // ── オーバーレイ要素のスクリーン座標を取得 ──
+  // layoutOverlay は slideImgContainer に position:absolute/inset:0 なので
+  // getBoundingClientRect() で絶対座標を取得し fixed 配置に使う
+  const overlay = document.getElementById('layoutOverlay');
+  const overlayRect = overlay ? overlay.getBoundingClientRect()
+    : document.getElementById('previewImgWrap').getBoundingClientRect();
 
+  const screenLeft   = overlayRect.left + Math.round(el.x  * sc.sx);
+  const screenTop    = overlayRect.top  + Math.round(el.y  * sc.sy);
+  const screenWidth  = Math.max(200, Math.round(el.cx * sc.sx));
+  const screenHeight = Math.max(40,  Math.round(el.cy * sc.sy));
+
+  // エディタがウィンドウをはみ出す場合は調整
+  const vpW = window.innerWidth;
+  const vpH = window.innerHeight;
+  const safeLeft = Math.min(Math.max(4, screenLeft), vpW - screenWidth - 4);
+  const safeTop  = Math.min(Math.max(4, screenTop),  vpH - screenHeight - 60);
+
+  // ── バックドロップ（外クリックで保存） ──
+  const backdrop = document.createElement('div');
+  backdrop.className = 'inline-editor-backdrop';
+  document.body.appendChild(backdrop);
+
+  // ── エディタ本体 ──
   const wrap = document.createElement('div');
   wrap.className = 'inline-text-editor-wrap';
-  wrap.style.cssText = `left:${left}px;top:${top}px;width:${width}px;`;
+  wrap.style.cssText = `left:${safeLeft}px;top:${safeTop}px;width:${screenWidth}px;`;
 
   const ta = document.createElement('textarea');
-  ta.style.cssText = `min-height:${height}px;font-size:${fsize}px;`;
+  ta.style.minHeight = screenHeight + 'px';
 
   const hint = document.createElement('div');
   hint.className = 'inline-text-editor-hint';
@@ -2387,47 +2440,43 @@ function showInlineTextEditor(elementIdx) {
 
   wrap.appendChild(ta);
   wrap.appendChild(hint);
-  overlay.appendChild(wrap);
+  document.body.appendChild(wrap); // ← body直下に配置（overflow/z-index問題を回避）
 
-  // ── カスタム アンドゥスタック（インラインエディタ内） ──
-  // ta.value 直接セットはブラウザのundo履歴を消すため独自スタックを使用
+  // ── カスタム アンドゥスタック ──
   const _iaStack = [currentText];
   let   _iaPtr   = 0;
   let   _iaTimer = null;
 
   ta.value = currentText;
-  ta.focus();
-  ta.setSelectionRange(currentText.length, currentText.length); // カーソルを末尾に
+  // 次のフレームでフォーカス（mouseupイベントとの競合を避ける）
+  requestAnimationFrame(() => {
+    ta.focus();
+    ta.setSelectionRange(currentText.length, currentText.length);
+  });
 
   ta.addEventListener('input', () => {
     clearTimeout(_iaTimer);
     _iaTimer = setTimeout(() => {
-      // redo を切り捨てて新しい状態を積む
       _iaStack.splice(_iaPtr + 1);
       _iaStack.push(ta.value);
       _iaPtr = _iaStack.length - 1;
-    }, 400); // 400ms 無操作でアンドゥポイントを作成
+    }, 400);
   });
 
-  let saved = false;
-  function commitEdit() {
-    if (saved || !wrap.parentElement) return;
-    saved = true;
+  let closed = false;
+  function closeEditor(doSave) {
+    if (closed) return;
+    closed = true;
     clearTimeout(_iaTimer);
     const newText = ta.value;
     wrap.remove();
-    saveInlineTextToRuns(el.name, newText, currentSlideIdx);
-  }
-  function cancelEdit() {
-    if (!wrap.parentElement) return;
-    clearTimeout(_iaTimer);
-    wrap.remove();
+    backdrop.remove();
+    if (doSave) saveInlineTextToRuns(el.name, newText, currentSlideIdx);
   }
 
   ta.addEventListener('keydown', evt => {
     const isUndo = (evt.ctrlKey || evt.metaKey) && evt.key === 'z' && !evt.shiftKey;
     const isRedo = (evt.ctrlKey || evt.metaKey) && ((evt.key === 'z' && evt.shiftKey) || evt.key === 'y');
-
     if (isUndo) {
       evt.preventDefault();
       clearTimeout(_iaTimer);
@@ -2439,16 +2488,14 @@ function showInlineTextEditor(elementIdx) {
       if (_iaPtr < _iaStack.length - 1) { _iaPtr++; ta.value = _iaStack[_iaPtr]; }
       return;
     }
-    if (evt.key === 'Escape') { cancelEdit(); return; }
-    if (evt.key === 'Enter' && evt.ctrlKey) { evt.preventDefault(); commitEdit(); }
+    if (evt.key === 'Escape') { closeEditor(false); return; }
+    if (evt.key === 'Enter' && evt.ctrlKey) { evt.preventDefault(); closeEditor(true); }
   });
 
-  ta.addEventListener('blur', () => {
-    // フォーカスが wrap 外に移った場合のみ保存
-    setTimeout(() => {
-      if (!wrap.parentElement) return;
-      if (!wrap.contains(document.activeElement)) commitEdit();
-    }, 120);
+  // バックドロップクリックで保存
+  backdrop.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    closeEditor(true);
   });
 }
 
