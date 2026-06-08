@@ -882,6 +882,38 @@ textarea.run-input.changed {
 .rh-sw { bottom:-4px; left:-4px; cursor:sw-resize; }
 .rh-w  { top:calc(50% - 4px); left:-4px; cursor:w-resize; }
 
+/* インラインテキストエディタ（プレビューオーバーレイでダブルクリック編集） */
+.inline-text-editor-wrap {
+  position: absolute;
+  z-index: 100;
+}
+.inline-text-editor-wrap textarea {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  border: 2.5px solid #0078D7;
+  background: rgba(255,255,255,0.97);
+  padding: 4px 6px;
+  box-sizing: border-box;
+  resize: vertical;
+  outline: none;
+  font-family: sans-serif;
+  line-height: 1.5;
+  border-radius: 4px 4px 0 0;
+  box-shadow: 0 2px 14px rgba(0,120,215,0.45);
+}
+.inline-text-editor-hint {
+  font-size: 10px;
+  color: #fff;
+  background: #0078D7;
+  padding: 3px 8px;
+  border-radius: 0 0 4px 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+}
+
 /* 選択中の位置・サイズ情報バー */
 #layoutInfoBar {
   font-size: 11px; color: #9ca3af; padding: 3px 12px;
@@ -1224,6 +1256,9 @@ textarea.run-input.changed {
       <div id="illustDropCursor"></div>
     </div>
     <div id="layoutInfoBar"></div>
+    <div id="previewNote" class="preview-note" style="display:none;">
+      ✏️ 編集モード：テキスト枠を<strong>ダブルクリック</strong>で文字編集 / ドラッグで移動 / ハンドルでリサイズ
+    </div>
     <!-- 推奨イラストパネル -->
     <div class="illust-panel" id="illustPanel" style="display:none;">
       <div class="illust-panel-header">
@@ -2026,7 +2061,8 @@ function toggleLayoutEdit() {
   btn.textContent = layoutEditMode ? '✅ 編集中' : '✏️ 編集';
   saveBtn.style.display = layoutEditMode ? 'inline-block' : 'none';
   document.getElementById('layoutInfoBar').style.display = layoutEditMode ? 'block' : 'none';
-  document.getElementById('previewNote').style.display  = layoutEditMode ? 'none'  : 'block';
+  const pNote = document.getElementById('previewNote');
+  if (pNote) pNote.style.display = layoutEditMode ? 'block' : 'none';
   if (layoutEditMode) {
     loadLayoutElements();
     document.addEventListener('keydown', onLayoutKeydown);
@@ -2161,6 +2197,11 @@ function onElDown(e) {
   if (e.target.classList.contains('rh')) return;
   e.preventDefault(); e.stopPropagation();
   const i = parseInt(e.currentTarget.dataset.i);
+  // ダブルクリック → インラインテキスト編集
+  if (e.detail >= 2) {
+    showInlineTextEditor(i);
+    return;
+  }
   selectEl(i);
   const sc = getScale(); if (!sc) return;
   dragInfo = {
@@ -2220,6 +2261,126 @@ function onDragMove(e) {
 }
 
 function onDragEnd() { dragInfo = null; }
+
+// ====== インラインテキストエディタ（ダブルクリックで直接編集） ======
+function showInlineTextEditor(elementIdx) {
+  const el = layoutElements[elementIdx];
+  if (!el || el.type !== 'text') return;
+
+  const sc = getScale(); if (!sc) return;
+  const overlay = document.getElementById('layoutOverlay');
+
+  // 既存のインラインエディタをすべて閉じる
+  overlay.querySelectorAll('.inline-text-editor-wrap').forEach(w => w.remove());
+
+  // 現在の編集テキストを取得（pendingChanges優先）
+  const slide = allSlides[currentSlideIdx];
+  const shape = slide && slide.shapes.find(s => s.name === el.name);
+  let currentText = el.text || '';
+  if (shape) {
+    currentText = shape.paragraphs.map(para =>
+      para.runs.map(r => {
+        const key = `${currentSlideIdx}-${shape.shapeIdx}-${para.paraIdx}-${r.runIdx}`;
+        return key in pendingChanges ? pendingChanges[key] : r.text;
+      }).join('')
+    ).join('\n');
+  }
+
+  const left   = Math.round(el.x  * sc.sx);
+  const top    = Math.round(el.y  * sc.sy);
+  const width  = Math.round(el.cx * sc.sx);
+  const height = Math.round(el.cy * sc.sy);
+  const fsize  = Math.max(10, Math.round(13 * sc.sx));
+
+  const wrap = document.createElement('div');
+  wrap.className = 'inline-text-editor-wrap';
+  wrap.style.cssText = `left:${left}px;top:${top}px;width:${width}px;`;
+
+  const ta = document.createElement('textarea');
+  ta.style.cssText = `min-height:${height}px;font-size:${fsize}px;`;
+  ta.value = currentText;
+
+  const hint = document.createElement('div');
+  hint.className = 'inline-text-editor-hint';
+  hint.innerHTML = `<span>✏️ ${escH(el.name)}</span><span>Ctrl+Enter:保存 / Esc:キャンセル</span>`;
+
+  wrap.appendChild(ta);
+  wrap.appendChild(hint);
+  overlay.appendChild(wrap);
+  ta.focus(); ta.select();
+
+  let saved = false;
+  function commitEdit() {
+    if (saved || !wrap.parentElement) return;
+    saved = true;
+    const newText = ta.value;
+    wrap.remove();
+    saveInlineTextToRuns(el.name, newText, currentSlideIdx);
+  }
+  function cancelEdit() {
+    if (!wrap.parentElement) return;
+    wrap.remove();
+  }
+
+  ta.addEventListener('keydown', evt => {
+    if (evt.key === 'Escape') { cancelEdit(); }
+    else if (evt.key === 'Enter' && evt.ctrlKey) { evt.preventDefault(); commitEdit(); }
+  });
+  ta.addEventListener('blur', () => {
+    // フォーカスが wrap 外に移った場合のみ保存
+    setTimeout(() => {
+      if (!wrap.parentElement) return;
+      if (!wrap.contains(document.activeElement)) commitEdit();
+    }, 120);
+  });
+}
+
+function saveInlineTextToRuns(shapeName, newText, slideIdx) {
+  const slide = allSlides[slideIdx];
+  const shape = slide && slide.shapes.find(s => s.name === shapeName);
+  if (!shape) return;
+
+  const lines = newText.split('\n');
+
+  shape.paragraphs.forEach((para, pi) => {
+    para.runs.forEach((run, ri) => {
+      const key = `${slideIdx}-${shape.shapeIdx}-${para.paraIdx}-${run.runIdx}`;
+      if (!(key in originalValues)) originalValues[key] = run.text;
+      // 最初のランだけ行テキストを入れ、他のランは空にする
+      const newVal = (ri === 0) ? (lines[pi] !== undefined ? lines[pi] : '') : '';
+      pendingChanges[key] = newVal;
+      run.text = newVal;
+      // センターパネルのtextareaも更新
+      const inputEl = document.querySelector(`textarea[data-key="${key}"]`);
+      if (inputEl) {
+        inputEl.value = newVal;
+        inputEl.classList.toggle('changed', newVal !== originalValues[key]);
+        autoResize(inputEl);
+      }
+    });
+  });
+
+  // 行数がパラグラフ数より多い場合、余った行は最終パラグラフ最初のランに追記
+  if (lines.length > shape.paragraphs.length && shape.paragraphs.length > 0) {
+    const lastPara = shape.paragraphs[shape.paragraphs.length - 1];
+    if (lastPara.runs.length > 0) {
+      const run = lastPara.runs[0];
+      const key = `${slideIdx}-${shape.shapeIdx}-${lastPara.paraIdx}-${run.runIdx}`;
+      const extra = lines.slice(shape.paragraphs.length).join('\n');
+      const appended = (pendingChanges[key] || '') + '\n' + extra;
+      pendingChanges[key] = appended;
+      run.text = appended;
+      const inputEl = document.querySelector(`textarea[data-key="${key}"]`);
+      if (inputEl) { inputEl.value = appended; inputEl.classList.add('changed'); autoResize(inputEl); }
+    }
+  }
+
+  // サイドバー・ヘッダーバッジ・変更タブを更新
+  updateSidebarCount(slideIdx);
+  updateHeaderBadge();
+  updateChangesTab();
+  showToast('✏️ テキストを更新しました（💾 保存ボタンで確定）');
+}
 
 // インチ表示のインフォバー
 function showInfo(el) {
@@ -3049,7 +3210,29 @@ async function doApplyIllustration(illustId, position) {
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast('✅ イラストを挿入しました！プレビュー再生成で確認できます');
+      showToast('🔄 イラスト挿入完了！プレビューを更新中...');
+      // プレビュー再生成（LibreOffice + pdftoppm）
+      try {
+        const prevRes = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
+          method: 'POST',
+          headers: { ...authHeaders() }
+        });
+        if (prevRes.ok) {
+          // キャッシュバスターを付けてプレビュー画像を再読み込み
+          const bust = Date.now();
+          const slide = allSlides[currentSlideIdx];
+          const num = String(slide.slideNum).padStart(2, '0');
+          const imgEl = document.getElementById('previewImg');
+          if (imgEl) {
+            imgEl.src = `/preview/${currentWeekId}/slide_${num}.png?v=${bust}`;
+          }
+          showToast('✅ プレビューを更新しました！');
+        } else {
+          showToast('✅ イラスト挿入済み（プレビュー再生成: 設定タブから手動で実行可）');
+        }
+      } catch(pe) {
+        showToast('✅ イラスト挿入済み（プレビュー再生成: 設定タブから手動で実行可）');
+      }
     } else {
       throw new Error(data.error || '挿入に失敗しました');
     }

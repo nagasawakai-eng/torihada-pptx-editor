@@ -270,7 +270,7 @@ app.post('/api/weeks/:weekId/upload',
 );
 
 // ─── プレビュー生成（管理者のみ） ───
-app.post('/api/weeks/:weekId/generate-preview', requireRole('admin'), (req, res) => {
+app.post('/api/weeks/:weekId/generate-preview', requireEditor, (req, res) => {
   const { weekId } = req.params;
   const ctx = resolveWeekPaths(weekId);
   if (!ctx || !ctx.pptxPath || !ctx.exists) {
