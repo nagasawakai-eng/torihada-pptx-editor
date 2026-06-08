@@ -1058,6 +1058,58 @@ app.post('/api/fishaudio/tts', async (req, res) => {
 // ====== イラスト推奨・挿入システム ======
 
 const ILLUST_CATALOG_PATH = path.join(__dirname, 'illustrations.catalog.json');
+const ILLUST_CACHE_DIR    = path.join(__dirname, 'public', 'illust-cache');
+
+// キャッシュディレクトリ作成
+if (!fs.existsSync(ILLUST_CACHE_DIR)) fs.mkdirSync(ILLUST_CACHE_DIR, { recursive: true });
+
+// イラスト画像キャッシュプロキシ（初回DL→以降ローカル配信）
+app.get('/illust-cache/:id.png', async (req, res) => {
+  const id = req.params.id.replace(/[^0-9]/g, '');
+  if (!id) return res.status(400).end();
+
+  const localPath = path.join(ILLUST_CACHE_DIR, `${id}.png`);
+
+  // キャッシュ済みなら即配信
+  if (fs.existsSync(localPath)) {
+    return res.set('Content-Type', 'image/png')
+              .set('Cache-Control', 'public, max-age=604800')
+              .sendFile(localPath);
+  }
+
+  // 未キャッシュ → Loose Drawingから取得してキャッシュ
+  try {
+    const url = `https://loosedrawing.com/assets/media/illustrations/png/${id}.png`;
+    const r = await fetch(url);
+    if (!r.ok) return res.status(404).end();
+    const buf = Buffer.from(await r.arrayBuffer());
+    fs.writeFileSync(localPath, buf);
+    res.set('Content-Type', 'image/png')
+       .set('Cache-Control', 'public, max-age=604800')
+       .send(buf);
+  } catch(e) {
+    res.status(502).end();
+  }
+});
+
+// 起動時に全カタログ画像をバックグラウンドでプリキャッシュ
+function preCacheIllustrations() {
+  const catalog = loadIllustCatalog();
+  let idx = 0;
+  function next() {
+    if (idx >= catalog.length) { console.log('✅ イラストキャッシュ完了'); return; }
+    const ill = catalog[idx++];
+    const localPath = path.join(ILLUST_CACHE_DIR, `${ill.id}.png`);
+    if (fs.existsSync(localPath)) { next(); return; }
+    fetch(`https://loosedrawing.com/assets/media/illustrations/png/${ill.id}.png`)
+      .then(r => r.ok ? r.arrayBuffer() : null)
+      .then(buf => { if (buf) fs.writeFileSync(localPath, Buffer.from(buf)); })
+      .catch(() => {})
+      .finally(() => setTimeout(next, 200)); // 0.2秒間隔でDL（レート制限対策）
+  }
+  setTimeout(next, 3000); // サーバー起動3秒後に開始
+}
+preCacheIllustrations();
 
 function loadIllustCatalog() {
   try {
@@ -1090,19 +1142,20 @@ app.get('/api/illustrations/suggest', (req, res) => {
     ? getSlideText(ctx.pptxPath, parseInt(slideIndex))
     : '';
 
+  const toUrl = (id) => `/illust-cache/${id}.png`;
+
   const scored = catalog.map(ill => {
-    const score = ill.keywords.reduce((s, kw) => s + (slideText.includes(kw) ? 2 : 0), 0)
-      + (slideText.length === 0 ? 0 : 0);
-    return { ...ill, score, thumbnailUrl: `https://loosedrawing.com/assets/media/illustrations/png/${ill.id}.png` };
+    const score = ill.keywords.reduce((s, kw) => s + (slideText.includes(kw) ? 2 : 0), 0);
+    return { ...ill, score, thumbnailUrl: toUrl(ill.id) };
   });
 
-  // スコア順 → ランダム要素を加えて多様性確保
   const sorted = scored.sort((a, b) => b.score - a.score);
   const top = sorted.slice(0, 6);
-  // スコアが低い場合は多様なカテゴリから補完
+
+  // スコアが全0なら多様なカテゴリから
   if (top.every(i => i.score === 0)) {
-    const shuffled = catalog.sort(() => Math.random() - 0.5).slice(0, 6);
-    return res.json({ illustrations: shuffled.map(i => ({ ...i, thumbnailUrl: `https://loosedrawing.com/assets/media/illustrations/png/${i.id}.png` })) });
+    const shuffled = [...catalog].sort(() => Math.random() - 0.5).slice(0, 6);
+    return res.json({ illustrations: shuffled.map(i => ({ ...i, thumbnailUrl: toUrl(i.id) })) });
   }
 
   res.json({ illustrations: top });
