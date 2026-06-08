@@ -1032,6 +1032,8 @@ textarea.run-input.changed {
     <span id="roleChip" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700;"></span>
     <button class="btn" style="background:#7c3aed;color:white;" onclick="openVideoReview()">🎬 動画レビュー</button>
     <button class="btn" style="background:#2b6cb0;color:white;position:relative;" onclick="openChangelog()">📋 変更履歴 <span id="changelogBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#e53e3e;color:white;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;"></span></button>
+    <button class="btn" id="undoBtn" onclick="globalUndo()" title="元に戻す (Ctrl+Z)" style="background:#4a5568;color:white;font-size:13px;padding:5px 10px;min-width:36px;">↩</button>
+    <button class="btn" id="redoBtn" onclick="globalRedo()" title="やり直す (Ctrl+Shift+Z)" style="background:#4a5568;color:white;font-size:13px;padding:5px 10px;min-width:36px;">↪</button>
     <button class="btn btn-restore" id="restoreBtn" onclick="restoreBackup()">元に戻す</button>
     <button class="btn" id="pdfBtn" style="background:#2d8c6e;color:white;" onclick="downloadPdf()">📄 PDFに変換</button>
     <button class="btn" id="shareBtn" style="background:#d97706;color:white;display:none;" onclick="openShareModal()">🔗 シェア</button>
@@ -1332,6 +1334,62 @@ let pendingChanges = {};   // key: "slideIdx-shapeIdx-paraIdx-runIdx" → newTex
 let originalValues = {};   // 元テキスト
 let currentWeekId  = 'week1';  // 現在表示中の週
 
+// ====== Undo / Redo スタック ======
+const _appUndoStack = [];   // [{changes:[{key,from,to}]}]
+const _appRedoStack = [];
+const APP_UNDO_LIMIT = 80;
+
+/** 変更をアンドゥスタックに積む（changeList: [{key, from, to}]） */
+function pushAppUndo(changeList) {
+  if (!changeList || !changeList.length) return;
+  _appUndoStack.push({ changes: changeList });
+  if (_appUndoStack.length > APP_UNDO_LIMIT) _appUndoStack.shift();
+  _appRedoStack.length = 0; // 新しい変更でリドゥをクリア
+}
+
+/** undo/redo 共通 — changeList を一括適用してUIを更新 */
+function _applyUndoChanges(changeList) {
+  changeList.forEach(({ key, val }) => {
+    const orig = originalValues[key] !== undefined ? originalValues[key] : '';
+    if (val === orig) { delete pendingChanges[key]; }
+    else              { pendingChanges[key] = val; }
+    // メモリ内スライドデータ更新
+    const [si, shi, pi, ri] = key.split('-').map(Number);
+    const slide = allSlides[si];
+    const shape = slide?.shapes.find(s => s.shapeIdx === shi);
+    const para  = shape?.paragraphs.find(p => p.paraIdx === pi);
+    const run   = para?.runs.find(r => r.runIdx === ri);
+    if (run) run.text = val;
+    // センターパネル textarea 更新
+    const el = document.querySelector(`textarea[data-key="${key}"]`);
+    if (el) {
+      el.value = val;
+      el.classList.toggle('changed', val !== orig);
+      autoResize(el);
+    }
+  });
+  const affected = new Set(changeList.map(c => parseInt(c.key)));
+  affected.forEach(si => updateSidebarCount(si));
+  updateHeaderBadge();
+  updateChangesTab();
+}
+
+function globalUndo() {
+  if (!_appUndoStack.length) { showToast('↩️ これ以上戻れません'); return; }
+  const action = _appUndoStack.pop();
+  _appRedoStack.push(action);
+  _applyUndoChanges(action.changes.map(c => ({ key: c.key, val: c.from })));
+  showToast('↩️ 元に戻しました');
+}
+
+function globalRedo() {
+  if (!_appRedoStack.length) { showToast('↪️ これ以上進めません'); return; }
+  const action = _appRedoStack.pop();
+  _appUndoStack.push(action);
+  _applyUndoChanges(action.changes.map(c => ({ key: c.key, val: c.to })));
+  showToast('↪️ やり直しました');
+}
+
 // ====== 週タブ ======
 async function loadWeekTabs() {
   try {
@@ -1529,7 +1587,7 @@ function renderSlide(idx) {
             ${para.runs.length > 1 ? `<span class="run-label">ラン ${run.runIdx+1}</span>` : ''}
             <textarea class="run-input${isChanged ? ' changed' : ''}"
               data-key="${key}" rows="1"
-              ${currentRole === 'viewer' ? 'readonly style="background:#f7fafc;cursor:default;color:#4a5568;"' : 'oninput="onTextChange(this)"'}>${escH(cur)}</textarea>
+              ${currentRole === 'viewer' ? 'readonly style="background:#f7fafc;cursor:default;color:#4a5568;"' : 'onfocus="captureUndoBefore(this)" oninput="onTextChange(this)" onblur="flushUndoBefore(this)"'}>${escH(cur)}</textarea>
           </div>`;
       }).join('');
       return `
@@ -1669,8 +1727,32 @@ function resetZoom() {
 })();
 
 // ====== テキスト変更ハンドラ ======
+// テキスト変更前の値を記録（フォーカス時）
+function captureUndoBefore(ta) {
+  if (ta._undoBefore === undefined) {
+    const key = ta.dataset.key;
+    ta._undoBefore = key in pendingChanges ? pendingChanges[key] : (originalValues[key] || '');
+  }
+}
+
+// フォーカスを外したときにアプリ全体のアンドゥスタックへ積む
+function flushUndoBefore(ta) {
+  if (ta._undoBefore !== undefined) {
+    const key = ta.dataset.key;
+    const newVal = ta.value;
+    if (ta._undoBefore !== newVal) {
+      pushAppUndo([{ key, from: ta._undoBefore, to: newVal }]);
+    }
+    ta._undoBefore = undefined;
+  }
+}
+
 function onTextChange(textarea) {
   const key = textarea.dataset.key;
+  // undo用: まだキャプチャしていなければここで捕捉
+  if (textarea._undoBefore === undefined) {
+    textarea._undoBefore = key in pendingChanges ? pendingChanges[key] : (originalValues[key] || '');
+  }
   pendingChanges[key] = textarea.value;
 
   const isChanged = textarea.value !== originalValues[key];
@@ -2298,34 +2380,69 @@ function showInlineTextEditor(elementIdx) {
 
   const ta = document.createElement('textarea');
   ta.style.cssText = `min-height:${height}px;font-size:${fsize}px;`;
-  ta.value = currentText;
 
   const hint = document.createElement('div');
   hint.className = 'inline-text-editor-hint';
-  hint.innerHTML = `<span>✏️ ${escH(el.name)}</span><span>Ctrl+Enter:保存 / Esc:キャンセル</span>`;
+  hint.innerHTML = `<span>✏️ ${escH(el.name)}</span><span>Ctrl+Enter:保存 / Ctrl+Z:戻す / Esc:キャンセル</span>`;
 
   wrap.appendChild(ta);
   wrap.appendChild(hint);
   overlay.appendChild(wrap);
-  ta.focus(); ta.select();
+
+  // ── カスタム アンドゥスタック（インラインエディタ内） ──
+  // ta.value 直接セットはブラウザのundo履歴を消すため独自スタックを使用
+  const _iaStack = [currentText];
+  let   _iaPtr   = 0;
+  let   _iaTimer = null;
+
+  ta.value = currentText;
+  ta.focus();
+  ta.setSelectionRange(currentText.length, currentText.length); // カーソルを末尾に
+
+  ta.addEventListener('input', () => {
+    clearTimeout(_iaTimer);
+    _iaTimer = setTimeout(() => {
+      // redo を切り捨てて新しい状態を積む
+      _iaStack.splice(_iaPtr + 1);
+      _iaStack.push(ta.value);
+      _iaPtr = _iaStack.length - 1;
+    }, 400); // 400ms 無操作でアンドゥポイントを作成
+  });
 
   let saved = false;
   function commitEdit() {
     if (saved || !wrap.parentElement) return;
     saved = true;
+    clearTimeout(_iaTimer);
     const newText = ta.value;
     wrap.remove();
     saveInlineTextToRuns(el.name, newText, currentSlideIdx);
   }
   function cancelEdit() {
     if (!wrap.parentElement) return;
+    clearTimeout(_iaTimer);
     wrap.remove();
   }
 
   ta.addEventListener('keydown', evt => {
-    if (evt.key === 'Escape') { cancelEdit(); }
-    else if (evt.key === 'Enter' && evt.ctrlKey) { evt.preventDefault(); commitEdit(); }
+    const isUndo = (evt.ctrlKey || evt.metaKey) && evt.key === 'z' && !evt.shiftKey;
+    const isRedo = (evt.ctrlKey || evt.metaKey) && ((evt.key === 'z' && evt.shiftKey) || evt.key === 'y');
+
+    if (isUndo) {
+      evt.preventDefault();
+      clearTimeout(_iaTimer);
+      if (_iaPtr > 0) { _iaPtr--; ta.value = _iaStack[_iaPtr]; }
+      return;
+    }
+    if (isRedo) {
+      evt.preventDefault();
+      if (_iaPtr < _iaStack.length - 1) { _iaPtr++; ta.value = _iaStack[_iaPtr]; }
+      return;
+    }
+    if (evt.key === 'Escape') { cancelEdit(); return; }
+    if (evt.key === 'Enter' && evt.ctrlKey) { evt.preventDefault(); commitEdit(); }
   });
+
   ta.addEventListener('blur', () => {
     // フォーカスが wrap 外に移った場合のみ保存
     setTimeout(() => {
@@ -2341,13 +2458,16 @@ function saveInlineTextToRuns(shapeName, newText, slideIdx) {
   if (!shape) return;
 
   const lines = newText.split('\n');
+  const undoChanges = []; // アプリ全体のアンドゥ用
 
   shape.paragraphs.forEach((para, pi) => {
     para.runs.forEach((run, ri) => {
       const key = `${slideIdx}-${shape.shapeIdx}-${para.paraIdx}-${run.runIdx}`;
       if (!(key in originalValues)) originalValues[key] = run.text;
+      const oldVal = key in pendingChanges ? pendingChanges[key] : run.text;
       // 最初のランだけ行テキストを入れ、他のランは空にする
       const newVal = (ri === 0) ? (lines[pi] !== undefined ? lines[pi] : '') : '';
+      if (oldVal !== newVal) undoChanges.push({ key, from: oldVal, to: newVal });
       pendingChanges[key] = newVal;
       run.text = newVal;
       // センターパネルのtextareaも更新
@@ -2368,12 +2488,19 @@ function saveInlineTextToRuns(shapeName, newText, slideIdx) {
       const key = `${slideIdx}-${shape.shapeIdx}-${lastPara.paraIdx}-${run.runIdx}`;
       const extra = lines.slice(shape.paragraphs.length).join('\n');
       const appended = (pendingChanges[key] || '') + '\n' + extra;
+      const prevVal = undoChanges.find(c => c.key === key)?.from || (key in pendingChanges ? pendingChanges[key] : run.text);
+      // 追記変更をundo側に記録（既存エントリを更新またはプッシュ）
+      const existing = undoChanges.find(c => c.key === key);
+      if (existing) { existing.to = appended; } else { undoChanges.push({ key, from: prevVal, to: appended }); }
       pendingChanges[key] = appended;
       run.text = appended;
       const inputEl = document.querySelector(`textarea[data-key="${key}"]`);
       if (inputEl) { inputEl.value = appended; inputEl.classList.add('changed'); autoResize(inputEl); }
     }
   }
+
+  // アプリ全体アンドゥスタックへ積む（1アクション = 1インライン編集セッション）
+  pushAppUndo(undoChanges);
 
   // サイドバー・ヘッダーバッジ・変更タブを更新
   updateSidebarCount(slideIdx);
@@ -2754,7 +2881,18 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveAll(); return; }
 
-  // テキストエリア入力中は無効
+  // ====== グローバル Ctrl+Z / Ctrl+Y（テキストエリア以外でのアプリ全体アンドゥ） ======
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+    const inTextArea = (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT');
+    // インラインエディタ内は独自スタックに委任するのでスキップ
+    const inInlineEditor = e.target.closest?.('.inline-text-editor-wrap');
+    if (!inTextArea && !inInlineEditor) {
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); globalUndo(); return; }
+      if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); globalRedo(); return; }
+    }
+  }
+
+  // テキストエリア入力中は以降のキーボードナビは無効
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
 
   if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
