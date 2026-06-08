@@ -1110,7 +1110,7 @@ app.get('/api/illustrations/suggest', (req, res) => {
 
 // イラストをPPTXスライドに挿入するAPI
 app.post('/api/illustrations/apply', requireEditor, async (req, res) => {
-  const { illustrationId, slideIndex, weekId } = req.body;
+  const { illustrationId, slideIndex, weekId, position } = req.body;
   if (illustrationId === undefined || slideIndex === undefined) {
     return res.status(400).json({ error: 'illustrationId と slideIndex は必須です' });
   }
@@ -1171,8 +1171,11 @@ app.post('/api/illustrations/apply', requireEditor, async (req, res) => {
     const maxId = idMatches.reduce((max, m) => Math.max(max, parseInt(m[1])), 100);
     const newShapeId = maxId + 1;
 
-    // 右下エリアに配置（スライドサイズ: 約12192000 x 6858000 EMU）
-    const pos = { x: 7200000, y: 1500000, cx: 2400000, cy: 2400000 };
+    // ドロップ位置（フロントエンドから渡された座標、なければデフォルト右中央）
+    const ILLUST_SIZE = 2400000;
+    const pos = (position && position.x !== undefined)
+      ? { x: Math.max(0, position.x), y: Math.max(0, position.y), cx: ILLUST_SIZE, cy: ILLUST_SIZE }
+      : { x: 7200000, y: 1500000, cx: ILLUST_SIZE, cy: ILLUST_SIZE };
 
     const picXml = `<p:pic><p:nvPicPr><p:cNvPr id="${newShapeId}" name="Illust_${illustrationId}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${newRId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${pos.x}" y="${pos.y}"/><a:ext cx="${pos.cx}" cy="${pos.cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln><a:noFill/></a:ln></p:spPr></p:pic>`;
 

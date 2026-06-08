@@ -545,12 +545,40 @@ textarea.run-input.changed {
 }
 .illust-thumb {
   border: 2px solid #e2e8f0; border-radius: 8px;
-  cursor: pointer; background: white; overflow: hidden;
+  cursor: grab; background: white; overflow: hidden;
   display: flex; flex-direction: column; align-items: center;
   padding: 4px; transition: all 0.15s; position: relative;
+  user-select: none;
 }
-.illust-thumb:hover { border-color: #68d391; transform: scale(1.03); }
-.illust-thumb.selected { border-color: #16a34a; box-shadow: 0 0 0 2px #bbf7d0; }
+.illust-thumb:hover { border-color: #68d391; transform: scale(1.03); box-shadow: 0 2px 8px rgba(22,163,74,0.2); }
+.illust-thumb:active { cursor: grabbing; }
+.illust-thumb.dragging { opacity: 0.4; border-color: #16a34a; }
+
+/* ドロップゾーン（スライドプレビュー） */
+.preview-img-wrap.drag-over {
+  outline: 3px dashed #16a34a !important;
+  outline-offset: -4px;
+  background: rgba(22,163,74,0.05) !important;
+}
+.preview-img-wrap.drag-over::after {
+  content: '🎨 ここにドロップ';
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(22,163,74,0.9); color: white;
+  padding: 10px 20px; border-radius: 12px;
+  font-size: 14px; font-weight: 700; pointer-events: none;
+  white-space: nowrap; z-index: 10;
+}
+/* ドロップ位置インジケーター */
+#illustDropCursor {
+  position: absolute; pointer-events: none; z-index: 20;
+  width: 80px; height: 80px; border-radius: 8px;
+  border: 2px dashed #16a34a; background: rgba(22,163,74,0.15);
+  transform: translate(-50%, -50%); display: none;
+}
+.illust-drag-hint {
+  font-size: 10px; color: #86efac; text-align: center;
+  padding: 2px 0 4px; font-weight: 600;
+}
 .illust-thumb img {
   width: 100%; aspect-ratio: 1; object-fit: contain;
   border-radius: 4px;
@@ -1118,8 +1146,13 @@ textarea.run-input.changed {
         <button class="layout-save-btn" id="layoutSaveBtn" onclick="saveLayoutEdits()" style="display:none">💾 保存</button>
       </div>
     </div>
-    <div class="preview-img-wrap" id="previewImgWrap">
+    <div class="preview-img-wrap" id="previewImgWrap"
+         style="position:relative;"
+         ondragover="handleIllustDragOver(event)"
+         ondragleave="handleIllustDragLeave(event)"
+         ondrop="handleIllustDrop(event)">
       <div class="preview-no-img">スライドを選択してください</div>
+      <div id="illustDropCursor"></div>
     </div>
     <div id="layoutInfoBar"></div>
     <!-- 台本エリア -->
@@ -1160,13 +1193,11 @@ textarea.run-input.changed {
       <div id="illustGrid" class="illust-grid">
         <div class="illust-loading">⏳ 読み込み中...</div>
       </div>
-      <div class="illust-apply-area">
-        <button class="illust-apply-btn" id="illustApplyBtn" onclick="applyIllustration()" disabled>
-          ✅ このスライドに適用
-        </button>
+      <div class="illust-apply-area" style="justify-content:space-between;align-items:center;">
+        <span style="font-size:10px;color:#16a34a;font-weight:600;">👆 イラストをスライドにドラッグ＆ドロップ</span>
         <button onclick="refreshIllustSuggestions()"
-          style="padding:7px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:11px;cursor:pointer;color:#16a34a;font-weight:700;"
-          title="再読み込み">🔄</button>
+          style="padding:5px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:11px;cursor:pointer;color:#16a34a;font-weight:700;flex-shrink:0;"
+          title="再読み込み">🔄 更新</button>
       </div>
     </div>
   </div>
@@ -2775,64 +2806,126 @@ async function loadIllustrationSuggestions(slideIdx) {
 function renderIllustGrid(illustrations) {
   const grid = document.getElementById('illustGrid');
   grid.innerHTML = illustrations.map(ill => `
-    <div class="illust-thumb" id="illust-${ill.id}" onclick="selectIllustration(${ill.id}, this)" title="${ill.title}">
+    <div class="illust-thumb" id="illust-${ill.id}"
+         draggable="true"
+         ondragstart="handleIllustDragStart(event, ${ill.id})"
+         ondragend="handleIllustDragEnd(event)"
+         title="ドラッグしてスライドに配置: ${ill.title}">
       <img src="${ill.thumbnailUrl}"
            alt="${ill.title}"
            loading="lazy"
+           draggable="false"
            onerror="this.style.opacity='0.3';this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'60\\' height=\\'60\\'><rect width=\\'60\\' height=\\'60\\' fill=\\'%23f0fdf4\\'/><text x=\\'50%25\\' y=\\'50%25\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'24\\'>🎨</text></svg>'">
       <div class="illust-thumb-label">${ill.title}</div>
     </div>
   `).join('');
 }
 
-function selectIllustration(id, el) {
-  document.querySelectorAll('.illust-thumb').forEach(t => t.classList.remove('selected'));
-  el.classList.add('selected');
-  selectedIllustId = id;
-  document.getElementById('illustApplyBtn').disabled = false;
+// ドラッグ開始
+function handleIllustDragStart(event, illustId) {
+  selectedIllustId = illustId;
+  event.dataTransfer.setData('illustrationId', String(illustId));
+  event.dataTransfer.effectAllowed = 'copy';
+  // ドラッグ中のサムネイル表示
+  const thumb = event.currentTarget;
+  thumb.classList.add('dragging');
+  // カスタムゴースト画像
+  const img = thumb.querySelector('img');
+  if (img && event.dataTransfer.setDragImage) {
+    event.dataTransfer.setDragImage(img, 40, 40);
+  }
 }
 
-async function applyIllustration() {
-  if (!selectedIllustId) return;
-  const btn = document.getElementById('illustApplyBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ 挿入中...';
+// ドラッグ終了
+function handleIllustDragEnd(event) {
+  event.currentTarget.classList.remove('dragging');
+  const wrap = document.getElementById('previewImgWrap');
+  if (wrap) wrap.classList.remove('drag-over');
+  const cursor = document.getElementById('illustDropCursor');
+  if (cursor) cursor.style.display = 'none';
+}
 
+// プレビューエリアへのドラッグオーバー
+function handleIllustDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+  const wrap = event.currentTarget;
+  wrap.classList.add('drag-over');
+  // カーソル位置インジケーター
+  const cursor = document.getElementById('illustDropCursor');
+  if (cursor) {
+    const rect = wrap.getBoundingClientRect();
+    cursor.style.display = 'block';
+    cursor.style.left = (event.clientX - rect.left) + 'px';
+    cursor.style.top  = (event.clientY - rect.top)  + 'px';
+  }
+}
+
+// ドラッグがエリア外に出た
+function handleIllustDragLeave(event) {
+  const wrap = event.currentTarget;
+  // 子要素に移動した場合は無視
+  if (wrap.contains(event.relatedTarget)) return;
+  wrap.classList.remove('drag-over');
+  const cursor = document.getElementById('illustDropCursor');
+  if (cursor) cursor.style.display = 'none';
+}
+
+// ドロップ処理
+async function handleIllustDrop(event) {
+  event.preventDefault();
+  const wrap = event.currentTarget;
+  wrap.classList.remove('drag-over');
+  const cursor = document.getElementById('illustDropCursor');
+  if (cursor) cursor.style.display = 'none';
+
+  const illustId = event.dataTransfer.getData('illustrationId') || selectedIllustId;
+  if (!illustId) return;
+
+  // ドロップ座標 → PPTX EMU座標に変換
+  const slideImg = wrap.querySelector('img');
+  if (!slideImg) return;
+  const imgRect = slideImg.getBoundingClientRect();
+
+  // スライドサイズ（16:9 widescreen）
+  const SLIDE_W_EMU = 12192000;
+  const SLIDE_H_EMU = 6858000;
+  const ILLUST_SIZE  = 2400000; // 約2.6インチ
+
+  const relX = event.clientX - imgRect.left;
+  const relY = event.clientY - imgRect.top;
+  const ratioX = Math.max(0, Math.min(1, relX / imgRect.width));
+  const ratioY = Math.max(0, Math.min(1, relY / imgRect.height));
+
+  // 中心がドロップ位置になるようオフセット
+  const emuX = Math.round(ratioX * SLIDE_W_EMU - ILLUST_SIZE / 2);
+  const emuY = Math.round(ratioY * SLIDE_H_EMU - ILLUST_SIZE / 2);
+
+  await doApplyIllustration(illustId, { x: emuX, y: emuY, cx: ILLUST_SIZE, cy: ILLUST_SIZE });
+}
+
+// 実際の挿入処理
+async function doApplyIllustration(illustId, position) {
+  showToast('⏳ イラストを挿入中...');
   try {
     const res = await fetch('/api/illustrations/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
-        illustrationId: selectedIllustId,
+        illustrationId: illustId,
         slideIndex: currentSlideIdx,
-        weekId: currentWeekId
+        weekId: currentWeekId,
+        position
       })
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      btn.textContent = '✅ 適用しました！';
-      btn.style.background = '#059669';
-      // プレビュー再生成を促す
-      setTimeout(() => {
-        btn.textContent = '✅ このスライドに適用';
-        btn.style.background = '#16a34a';
-        btn.disabled = false;
-        // プレビュー再読み込み
-        updatePreview(currentSlideIdx);
-      }, 2000);
-      showToast('✅ イラストを挿入しました！プレビュー再生成で反映されます');
+      showToast('✅ イラストを挿入しました！プレビュー再生成で確認できます');
     } else {
       throw new Error(data.error || '挿入に失敗しました');
     }
   } catch(e) {
-    btn.textContent = '❌ エラー';
-    btn.style.background = '#e53e3e';
-    setTimeout(() => {
-      btn.textContent = '✅ このスライドに適用';
-      btn.style.background = '#16a34a';
-      btn.disabled = false;
-    }, 2000);
-    alert('エラー: ' + e.message);
+    showToast('❌ エラー: ' + e.message);
   }
 }
 
