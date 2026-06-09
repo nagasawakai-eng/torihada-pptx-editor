@@ -1303,7 +1303,7 @@ textarea.run-input.changed {
         <span class="zoom-label" id="zoomLabel">100%</span>
         <button class="zoom-btn" onclick="changeZoom(+10)" title="拡大">＋</button>
         <button class="zoom-reset" onclick="resetZoom()" title="幅に合わせる">幅合わせ</button>
-        <button class="layout-save-btn" id="layoutSaveBtn" onclick="saveLayoutEdits()" disabled title="ドラッグで要素を移動したら保存">💾 保存</button>
+        <button class="layout-save-btn" id="layoutSaveBtn" onclick="saveLayoutEdits()" disabled title="変更を手動で保存（通常は自動保存されます）">💾 保存</button>
       </div>
     </div>
     <div class="preview-img-wrap" id="previewImgWrap"
@@ -2439,8 +2439,13 @@ function onDragMove(e) {
 
 function onDragEnd(e) {
   if (dragInfo && layoutDirty) {
-    // ドラッグ後に保存を促す
-    showToast('📌 位置を変更しました → 💾 保存ボタンで確定');
+    // ① 即座にCanvasでプレビュー更新（サーバー不要・< 100ms）
+    const snap = layoutElementsSnapshot.map(el => ({...el}));
+    instantPreviewCanvas(snap, layoutElements);
+    layoutElementsSnapshot = layoutElements.map(el => ({...el}));
+
+    // ② バックグラウンドで自動保存（ユーザー操作不要）
+    autoSaveLayoutPositions();
   }
   dragInfo = null;
 }
@@ -2743,6 +2748,60 @@ async function regeneratePreviewBackground(slideNum) {
     };
     fresh.src = newSrc;
   } catch(e) {}
+}
+
+// ドラッグ終了時のサイレント自動保存（トースト不要）
+async function autoSaveLayoutPositions() {
+  if (!layoutDirty || !layoutEntryName) return;
+  const btn = document.getElementById('layoutSaveBtn');
+  try {
+    const res = await fetch(`/api/update-positions?weekId=${currentWeekId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ entryName: layoutEntryName, updates: layoutElements })
+    });
+    const data = await res.json();
+    if (data.success) {
+      layoutDirty = false;
+      updateSaveBtn();
+      // バックグラウンドでLibreOffice精密レンダリング
+      const slide = allSlides[currentSlideIdx];
+      if (slide) regeneratePreviewBackground(slide.slideNum);
+    }
+  } catch(err) {
+    // 自動保存失敗時はボタンを有効のままにして手動保存を促す
+    console.warn('[autoSave] 失敗:', err.message);
+  }
+}
+
+// イラスト挿入の即時Canvasプレビュー
+async function instantShowIllustOnCanvas(illustId, position) {
+  const imgEl = document.getElementById('previewImg');
+  if (!imgEl || !imgEl.complete || imgEl.naturalWidth < 10) return;
+
+  const SLIDE_W_EMU = 12192000;
+  const SLIDE_H_EMU = 6858000;
+  const W = imgEl.naturalWidth, H = imgEl.naturalHeight;
+
+  // イラスト画像を取得
+  const ill = new Image();
+  ill.crossOrigin = 'anonymous';
+  ill.src = `/illust-cache/${illustId}.png`;
+  await new Promise(res => { ill.onload = res; ill.onerror = res; setTimeout(res, 3000); });
+  if (!ill.naturalWidth) return;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(imgEl, 0, 0);
+
+  // EMU→ピクセル変換して描画
+  const sx = W / SLIDE_W_EMU, sy = H / SLIDE_H_EMU;
+  ctx.drawImage(ill,
+    Math.round(position.x * sx), Math.round(position.y * sy),
+    Math.round(position.cx * sx), Math.round(position.cy * sy)
+  );
+  imgEl.src = canvas.toDataURL('image/jpeg', 0.93);
 }
 
 async function saveLayoutEdits() {
@@ -3719,7 +3778,10 @@ async function handleIllustDrop(event) {
 
 // 実際の挿入処理
 async function doApplyIllustration(illustId, position) {
-  // 位置変更が未保存なら先に保存（PPTXへの競合書き込みを防止）
+  // ① 即座にCanvasでイラストをプレビュー表示（サーバー不要・< 500ms）
+  instantShowIllustOnCanvas(illustId, position);
+
+  // ② 位置変更が未保存なら先に保存（PPTXへの競合書き込みを防止）
   await ensureLayoutSaved();
 
   showToast('⏳ イラストを挿入中...');
@@ -3741,7 +3803,7 @@ async function doApplyIllustration(illustId, position) {
       // イラスト追加後にレイアウト要素を再読み込み（要素数が変わるため）
       await loadLayoutElements();
 
-      // バックグラウンドでプレビュー再生成
+      // バックグラウンドでLibreOffice精密レンダリング
       const slide = allSlides[currentSlideIdx];
       regeneratePreviewBackground(slide.slideNum);
     } else {
