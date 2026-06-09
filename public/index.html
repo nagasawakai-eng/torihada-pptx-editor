@@ -2126,8 +2126,19 @@ async function regeneratePreview(silent = false) {
 }
 
 // ====== 保存 ======
+// 位置変更が未保存の場合、PPTX競合を防ぐために先に保存する
+async function ensureLayoutSaved() {
+  if (layoutDirty && layoutEntryName) {
+    await saveLayoutEdits();
+  }
+}
+
 async function saveAll(opts = {}) {
   const { silent = false, thenPreview = false } = opts;
+
+  // 位置変更を先に保存（同じPPTXファイルへの競合書き込みを防止）
+  await ensureLayoutSaved();
+
   const changedEntries = {};
 
   for (const [key, newText] of Object.entries(pendingChanges)) {
@@ -3708,6 +3719,9 @@ async function handleIllustDrop(event) {
 
 // 実際の挿入処理
 async function doApplyIllustration(illustId, position) {
+  // 位置変更が未保存なら先に保存（PPTXへの競合書き込みを防止）
+  await ensureLayoutSaved();
+
   showToast('⏳ イラストを挿入中...');
   try {
     const res = await fetch('/api/illustrations/apply', {
@@ -3722,29 +3736,14 @@ async function doApplyIllustration(illustId, position) {
     });
     const data = await res.json();
     if (res.ok && data.success) {
-      showToast('🔄 イラスト挿入完了！プレビューを更新中...');
-      // プレビュー再生成（LibreOffice + pdftoppm）
-      try {
-        const prevRes = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
-          method: 'POST',
-          headers: { ...authHeaders() }
-        });
-        if (prevRes.ok) {
-          // キャッシュバスターを付けてプレビュー画像を再読み込み
-          const bust = Date.now();
-          const slide = allSlides[currentSlideIdx];
-          const num = String(slide.slideNum).padStart(2, '0');
-          const imgEl = document.getElementById('previewImg');
-          if (imgEl) {
-            imgEl.src = `/preview/${currentWeekId}/slide_${num}.png?v=${bust}`;
-          }
-          showToast('✅ プレビューを更新しました！');
-        } else {
-          showToast('✅ イラスト挿入済み（プレビュー再生成: 設定タブから手動で実行可）');
-        }
-      } catch(pe) {
-        showToast('✅ イラスト挿入済み（プレビュー再生成: 設定タブから手動で実行可）');
-      }
+      showToast('✅ イラスト挿入完了！');
+
+      // イラスト追加後にレイアウト要素を再読み込み（要素数が変わるため）
+      await loadLayoutElements();
+
+      // バックグラウンドでプレビュー再生成
+      const slide = allSlides[currentSlideIdx];
+      regeneratePreviewBackground(slide.slideNum);
     } else {
       throw new Error(data.error || '挿入に失敗しました');
     }
