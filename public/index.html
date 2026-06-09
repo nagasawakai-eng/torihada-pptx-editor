@@ -2097,8 +2097,27 @@ function renderScriptAllList() {
   }).join('');
 }
 
+// ====== プレビュー再生成ヘルパー ======
+async function regeneratePreview(silent = false) {
+  try {
+    const prevRes = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
+      method: 'POST', headers: authHeaders()
+    });
+    if (prevRes.ok) {
+      const slide = allSlides[currentSlideIdx];
+      if (slide) {
+        const num = String(slide.slideNum).padStart(2, '0');
+        const imgEl = document.getElementById('previewImg');
+        if (imgEl) imgEl.src = `/preview/${currentWeekId}/slide_${num}.png?v=${Date.now()}`;
+      }
+      if (!silent) showToast('🖼 プレビューを更新しました');
+    }
+  } catch(e) { /* preview generation error is non-fatal */ }
+}
+
 // ====== 保存 ======
-async function saveAll() {
+async function saveAll(opts = {}) {
+  const { silent = false, thenPreview = false } = opts;
   const changedEntries = {};
 
   for (const [key, newText] of Object.entries(pendingChanges)) {
@@ -2116,7 +2135,10 @@ async function saveAll() {
   }
 
   const edits = Object.values(changedEntries);
-  if (edits.length === 0) { showStatus('変更がありません', 'error'); return; }
+  if (edits.length === 0) {
+    if (!silent) showStatus('変更がありません', 'error');
+    return false;
+  }
 
   const saveBtn = document.getElementById('saveBtn');
   saveBtn.disabled = true;
@@ -2146,15 +2168,21 @@ async function saveAll() {
       document.querySelectorAll('.run-input.changed').forEach(el => el.classList.remove('changed'));
       updateHeaderBadge();
       updateChangesTab();
-      showStatus('✅ 保存しました', 'success');
+      if (!silent) showStatus('✅ 保存しました', 'success');
+      // プレビュー再生成（バックグラウンドで実行）
+      regeneratePreview(silent);
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 保存する';
+      return true;
     } else {
-      showStatus('❌ ' + data.error, 'error');
+      if (!silent) showStatus('❌ ' + data.error, 'error');
     }
   } catch(e) {
-    showStatus('❌ 通信エラー', 'error');
+    if (!silent) showStatus('❌ 通信エラー', 'error');
   }
   saveBtn.disabled = false;
   saveBtn.textContent = '💾 保存する';
+  return false;
 }
 
 // ====== 復元 ======
@@ -2588,7 +2616,12 @@ function saveInlineTextToRuns(shapeName, newText, slideIdx) {
   updateSidebarCount(slideIdx);
   updateHeaderBadge();
   updateChangesTab();
-  showToast('✏️ テキストを更新しました（💾 保存ボタンで確定）');
+
+  // ── 自動保存: 編集完了後すぐに保存してプレビューも更新 ──
+  showToast('✏️ テキストを保存中...');
+  saveAll({ silent: true }).then(ok => {
+    if (ok) showToast('✅ テキストを保存しました');
+  });
 }
 
 // インチ表示のインフォバー

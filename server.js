@@ -791,12 +791,16 @@ function patchElementPositions(filePath, entryName, updates) {
   const shapeUpds = updates.filter(u => u.type === 'shape');
   let si = 0;
   xml = xml.replace(/<p:sp[\s>][\s\S]*?<\/p:sp>/g, m => {
-    const u = shapeUpds.find(u => u.idx === si++); return u ? patchEl(m, u) : m;
+    const idx = si++;  // ← find の外で1回だけインクリメント（バグ修正）
+    const u = shapeUpds.find(u => u.idx === idx);
+    return u ? patchEl(m, u) : m;
   });
   const picUpds = updates.filter(u => u.type === 'picture');
   let pi = 0;
   xml = xml.replace(/<p:pic[\s>][\s\S]*?<\/p:pic>/g, m => {
-    const u = picUpds.find(u => u.idx === pi++); return u ? patchEl(m, u) : m;
+    const idx = pi++;  // ← find の外で1回だけインクリメント（バグ修正）
+    const u = picUpds.find(u => u.idx === idx);
+    return u ? patchEl(m, u) : m;
   });
   zip.updateFile(entryName, Buffer.from(xml, 'utf8'));
   return zip.toBuffer();
