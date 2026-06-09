@@ -1722,11 +1722,9 @@ function updatePreview(idx) {
       <div id="layoutOverlay" class="layout-overlay"></div>
     </div>`;
   applyZoom();
-  // 常時編集可能モード：スライド切り替え時に自動でレイアウト要素を読み込む
-  // （editorロール以上のみ。viewerはドラッグ不可）
+  // 常時編集可能モード：スライド切り替え時にレイアウト要素を読み込む
+  // layoutElementsはリセットしない → 前スライドのoverlay要素が残ったままロードされる（即応性確保）
   if (currentRole !== 'viewer') {
-    layoutElements = []; layoutDirty = false; selectedIdx = -1;
-    updateSaveBtn();
     loadLayoutElements();
   }
 }
@@ -2273,12 +2271,16 @@ function onLayoutKeydown(e) {
 async function loadLayoutElements() {
   const slide = allSlides[currentSlideIdx];
   if (!slide) return;
+  // ロード中のスライド番号を記録（非同期完了時にスライドが変わっていたら無視）
+  const loadingSlideNum = slide.slideNum;
   try {
     const res = await fetch(`/api/slide-positions/${slide.slideNum}?weekId=${currentWeekId}`);
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
+    // ロード完了時に別スライドに切り替わっていたら反映しない
+    if (allSlides[currentSlideIdx]?.slideNum !== loadingSlideNum) return;
     layoutElements = data.elements;
-    layoutElementsSnapshot = layoutElements.map(e => ({...e})); // スナップショット保存
+    layoutElementsSnapshot = layoutElements.map(e => ({...e}));
     layoutEntryName = data.entryName;
     layoutDirty = false; selectedIdx = -1;
     updateSaveBtn();
@@ -2750,10 +2752,9 @@ async function regeneratePreviewBackground(slideNum) {
   } catch(e) {}
 }
 
-// ドラッグ終了時のサイレント自動保存（トースト不要）
+// ドラッグ終了時のサイレント自動保存（LibreOffice変換は行わない → CPUを空ける）
 async function autoSaveLayoutPositions() {
   if (!layoutDirty || !layoutEntryName) return;
-  const btn = document.getElementById('layoutSaveBtn');
   try {
     const res = await fetch(`/api/update-positions?weekId=${currentWeekId}`, {
       method: 'POST',
@@ -2764,12 +2765,10 @@ async function autoSaveLayoutPositions() {
     if (data.success) {
       layoutDirty = false;
       updateSaveBtn();
-      // バックグラウンドでLibreOffice精密レンダリング
-      const slide = allSlides[currentSlideIdx];
-      if (slide) regeneratePreviewBackground(slide.slideNum);
+      // ※ LibreOfficeは起動しない。CanvasプレビューとPPTXへの書き込みのみ。
+      //   精密プレビューが必要な場合は手動保存ボタン or PDF変換時に実行。
     }
   } catch(err) {
-    // 自動保存失敗時はボタンを有効のままにして手動保存を促す
     console.warn('[autoSave] 失敗:', err.message);
   }
 }
@@ -3802,10 +3801,7 @@ async function doApplyIllustration(illustId, position) {
 
       // イラスト追加後にレイアウト要素を再読み込み（要素数が変わるため）
       await loadLayoutElements();
-
-      // バックグラウンドでLibreOffice精密レンダリング
-      const slide = allSlides[currentSlideIdx];
-      regeneratePreviewBackground(slide.slideNum);
+      // ※ LibreOfficeは起動しない。Canvasプレビューとレイアウト再読み込みのみ。
     } else {
       throw new Error(data.error || '挿入に失敗しました');
     }
