@@ -2217,6 +2217,7 @@ const EMU_PER_IN  = 914400;
 
 let layoutEditMode = false;
 let layoutElements = [];
+let layoutElementsSnapshot = []; // 最後に読み込み/保存した時点の位置スナップショット
 let layoutEntryName = null;
 let layoutDirty = false;
 let selectedIdx = -1;
@@ -2275,6 +2276,7 @@ async function loadLayoutElements() {
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
     layoutElements = data.elements;
+    layoutElementsSnapshot = layoutElements.map(e => ({...e})); // スナップショット保存
     layoutEntryName = data.entryName;
     layoutDirty = false; selectedIdx = -1;
     updateSaveBtn();
@@ -2639,19 +2641,115 @@ function updateSaveBtn() {
   btn.disabled = false;
 }
 
+// ====== Canvas即時プレビュー更新 ======
+// LibreOfficeを待たずにピクセルレベルで要素を移動して即座に表示
+function instantPreviewCanvas(oldEls, newEls) {
+  const imgEl = document.getElementById('previewImg');
+  if (!imgEl || !imgEl.complete || imgEl.naturalWidth < 10) return false;
+
+  const SLIDE_W_EMU = 12192000;
+  const SLIDE_H_EMU = 6858000;
+  const W = imgEl.naturalWidth;
+  const H = imgEl.naturalHeight;
+  const sx = W / SLIDE_W_EMU;
+  const sy = H / SLIDE_H_EMU;
+
+  // 変更された要素を抽出
+  const changes = [];
+  for (let i = 0; i < newEls.length; i++) {
+    const o = oldEls[i], n = newEls[i];
+    if (!o || !n) continue;
+    if (o.x !== n.x || o.y !== n.y || o.cx !== n.cx || o.cy !== n.cy) {
+      changes.push({ o, n });
+    }
+  }
+  if (changes.length === 0) return false;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(imgEl, 0, 0);
+
+  // ①全旧位置のピクセルデータを先に収集（上書き前に）
+  const pixelDataList = changes.map(({ o }) => {
+    const ox = Math.max(0, Math.round(o.x * sx));
+    const oy = Math.max(0, Math.round(o.y * sy));
+    const ow = Math.min(W - ox, Math.max(1, Math.round(o.cx * sx)));
+    const oh = Math.min(H - oy, Math.max(1, Math.round(o.cy * sy)));
+    return { data: ctx.getImageData(ox, oy, ow, oh), ox, oy, ow, oh };
+  });
+
+  // ②旧位置をスライド背景色で塗りつぶす（白ベース）
+  changes.forEach(({ o }) => {
+    const ox = Math.max(0, Math.round(o.x * sx));
+    const oy = Math.max(0, Math.round(o.y * sy));
+    const ow = Math.min(W - ox, Math.max(1, Math.round(o.cx * sx)));
+    const oh = Math.min(H - oy, Math.max(1, Math.round(o.cy * sy)));
+    ctx.fillStyle = '#f8f8f8';
+    ctx.fillRect(ox, oy, ow, oh);
+  });
+
+  // ③新位置にピクセルを配置
+  changes.forEach(({ n }, i) => {
+    const pd = pixelDataList[i];
+    if (!pd) return;
+    const nx = Math.max(0, Math.round(n.x * sx));
+    const ny = Math.max(0, Math.round(n.y * sy));
+    const nw = Math.max(1, Math.round(n.cx * sx));
+    const nh = Math.max(1, Math.round(n.cy * sy));
+
+    if (nw === pd.ow && nh === pd.oh) {
+      ctx.putImageData(pd.data, nx, ny);
+    } else {
+      // サイズが変わった場合はリサイズ
+      const tmp = document.createElement('canvas');
+      tmp.width = pd.ow; tmp.height = pd.oh;
+      tmp.getContext('2d').putImageData(pd.data, 0, 0);
+      ctx.drawImage(tmp, nx, ny, nw, nh);
+    }
+  });
+
+  // 即座にプレビュー更新（data URL経由）
+  imgEl.src = canvas.toDataURL('image/jpeg', 0.93);
+  return true;
+}
+
+// バックグラウンドでLibreOffice変換を実行し完了時にプレビューを差し替え
+async function regeneratePreviewBackground(slideNum) {
+  try {
+    const res = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
+      method: 'POST', headers: authHeaders()
+    });
+    if (!res.ok) return;
+    // 変換完了 → スムーズにプレビューを差し替え
+    const num = String(slideNum).padStart(2, '0');
+    const imgEl = document.getElementById('previewImg');
+    if (!imgEl) return;
+    const bust = Date.now();
+    const newSrc = `/preview/${currentWeekId}/slide_${num}.png?v=${bust}`;
+    // フェードイン遷移
+    const fresh = new Image();
+    fresh.onload = () => {
+      imgEl.style.transition = 'opacity 0.4s';
+      imgEl.style.opacity = '0.4';
+      setTimeout(() => {
+        imgEl.src = newSrc;
+        imgEl.style.opacity = '1';
+        setTimeout(() => { imgEl.style.transition = ''; }, 500);
+      }, 50);
+    };
+    fresh.src = newSrc;
+  } catch(e) {}
+}
+
 async function saveLayoutEdits() {
   if (!layoutDirty || !layoutEntryName) return;
   const btn = document.getElementById('layoutSaveBtn');
   btn.textContent = '保存中...'; btn.disabled = true;
   try {
-    // ① 送信前の位置をログ
     const slide = allSlides[currentSlideIdx];
-    console.log('[saveLayoutEdits] 送信 entryName:', layoutEntryName, 'elements:', layoutElements.length, 'weekId:', currentWeekId);
-    layoutElements.forEach(el => {
-      console.log(`  ${el.type}[${el.idx}] "${el.name}" x=${el.x} y=${el.y} cx=${el.cx} cy=${el.cy}`);
-    });
 
-    // ② 位置データをPPTXに書き込む
+    // ① PPTXに位置データを書き込む
     const res = await fetch(`/api/update-positions?weekId=${currentWeekId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -2659,59 +2757,23 @@ async function saveLayoutEdits() {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
-    console.log('[saveLayoutEdits] ✅ 位置保存成功');
     layoutDirty = false;
 
-    // ③ 書き込み後にサーバーから再読み込みして検証
-    try {
-      const verifyRes = await fetch(`/api/slide-positions/${slide.slideNum}?weekId=${currentWeekId}`);
-      const verifyData = await verifyRes.json();
-      if (verifyData.success) {
-        let mismatch = 0;
-        layoutElements.forEach(el => {
-          const actual = verifyData.elements.find(e => e.type === el.type && e.idx === el.idx);
-          if (actual && (actual.x !== el.x || actual.y !== el.y)) {
-            console.warn(`[verify] ⚠️ ${el.type}[${el.idx}] 書き込み失敗: 要求(${el.x},${el.y}) → 実際(${actual.x},${actual.y})`);
-            mismatch++;
-          }
-        });
-        if (mismatch === 0) {
-          console.log('[verify] ✅ 全要素の位置が正しく書き込まれました');
-        } else {
-          showToast(`⚠️ ${mismatch}件の要素が正しく保存されませんでした（コンソール確認）`);
-        }
-      }
-    } catch(ve) { console.log('[verify] 検証スキップ:', ve.message); }
+    // ② Canvas即時プレビュー更新（LibreOfficeを待たない）
+    const snapshotForCanvas = layoutElementsSnapshot.map(e => ({...e}));
+    instantPreviewCanvas(snapshotForCanvas, layoutElements);
 
-    btn.textContent = '🔄 プレビュー更新中...'; btn.disabled = true;
+    // ③ スナップショット更新
+    layoutElementsSnapshot = layoutElements.map(e => ({...e}));
 
-    // ④ プレビューPNGを再生成（位置変更を画像に反映）
-    try {
-      const prevRes = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
-        method: 'POST',
-        headers: authHeaders()
-      });
-      if (prevRes.ok) {
-        // キャッシュバスターつきで現在スライドのプレビューを再読み込み
-        const bust = Date.now();
-        const num = String(slide.slideNum).padStart(2, '0');
-        const imgEl = document.getElementById('previewImg');
-        if (imgEl) {
-          imgEl.src = `/preview/${currentWeekId}/slide_${num}.png?v=${bust}`;
-        }
-        btn.textContent = '✅ 保存済';
-        showToast('✅ 位置を保存してプレビューを更新しました');
-      } else {
-        const errText = await prevRes.text().catch(() => '');
-        console.warn('[saveLayoutEdits] プレビュー再生成失敗:', prevRes.status, errText);
-        btn.textContent = '✅ 保存済（プレビュー手動更新）';
-        showToast('✅ 位置を保存しました（プレビューは設定タブから再生成できます）');
-      }
-    } catch(pe) {
-      console.warn('[saveLayoutEdits] プレビューエラー:', pe);
-      btn.textContent = '✅ 保存済（プレビュー手動更新）';
-    }
-    setTimeout(() => { btn.textContent = '💾 保存'; btn.disabled = false; }, 3000);
+    btn.textContent = '✅ 保存済';
+    btn.disabled = false;
+    showToast('✅ 位置を保存しました');
+    setTimeout(() => { btn.textContent = '💾 保存'; btn.disabled = false; }, 2000);
+
+    // ④ バックグラウンドでLibreOffice変換（精度の高い再描画）
+    regeneratePreviewBackground(slide.slideNum);
+
   } catch(e) {
     console.error('[saveLayoutEdits] 保存エラー:', e);
     alert('保存エラー: ' + e.message);
