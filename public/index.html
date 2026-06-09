@@ -971,25 +971,30 @@ textarea.run-input.changed {
 #layoutInfoBar {
   font-size: 11px; color: #9ca3af; padding: 3px 12px;
   font-family: monospace; letter-spacing: 0.03em;
-  min-height: 18px; display: none;
+  min-height: 18px;
 }
 
-.layout-edit-btn {
-  background: #374151; color: #d1d5db; border: none;
-  padding: 4px 11px; border-radius: 5px; cursor: pointer;
-  font-size: 11px; font-family: inherit; transition: all 0.15s;
-  margin-left: 8px; white-space: nowrap;
-}
-.layout-edit-btn:hover { background: #0078D7; color: white; }
-.layout-edit-btn.active { background: #0078D7; color: white; }
+/* 編集ボタン非表示（常時編集可能なため不要） */
+.layout-edit-btn { display: none !important; }
+
 .layout-save-btn {
-  background: #059669; color: white; border: none;
+  background: #6b7280; color: white; border: none;
   padding: 4px 11px; border-radius: 5px; cursor: pointer;
-  font-size: 11px; font-family: inherit; transition: all 0.15s;
+  font-size: 11px; font-family: inherit; transition: all 0.2s;
   margin-left: 4px; white-space: nowrap;
 }
+/* 変更あり：緑色でハイライト */
+.layout-save-btn.dirty {
+  background: #059669;
+  box-shadow: 0 0 0 2px rgba(5,150,105,0.3);
+  animation: pulse-green 1.5s ease-in-out infinite;
+}
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(5,150,105,0.3); }
+  50%       { box-shadow: 0 0 0 5px rgba(5,150,105,0.15); }
+}
 .layout-save-btn:hover:not(:disabled) { background: #047857; }
-.layout-save-btn:disabled { opacity: 0.6; cursor: default; }
+.layout-save-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* ====== ローディング ====== */
 .loading {
@@ -1298,8 +1303,7 @@ textarea.run-input.changed {
         <span class="zoom-label" id="zoomLabel">100%</span>
         <button class="zoom-btn" onclick="changeZoom(+10)" title="拡大">＋</button>
         <button class="zoom-reset" onclick="resetZoom()" title="幅に合わせる">幅合わせ</button>
-        <button class="layout-edit-btn" id="layoutEditBtn" onclick="toggleLayoutEdit()" title="要素をドラッグで移動・リサイズ">✏️ 編集</button>
-        <button class="layout-save-btn" id="layoutSaveBtn" onclick="saveLayoutEdits()" style="display:none">💾 保存</button>
+        <button class="layout-save-btn" id="layoutSaveBtn" onclick="saveLayoutEdits()" disabled title="ドラッグで要素を移動したら保存">💾 保存</button>
       </div>
     </div>
     <div class="preview-img-wrap" id="previewImgWrap"
@@ -1311,8 +1315,8 @@ textarea.run-input.changed {
       <div id="illustDropCursor"></div>
     </div>
     <div id="layoutInfoBar"></div>
-    <div id="previewNote" class="preview-note" style="display:none;">
-      ✏️ 編集モード：テキスト枠を<strong>ダブルクリック</strong>で文字編集 / ドラッグで移動 / ハンドルでリサイズ
+    <div id="previewNote" class="preview-note">
+      ドラッグで移動・リサイズ ／ テキスト枠は<strong>ダブルクリック</strong>で文字編集
     </div>
     <!-- イラストパネル（推奨 + 全件 + 検索） -->
     <div class="illust-panel" id="illustPanel" style="display:none;">
@@ -1718,7 +1722,13 @@ function updatePreview(idx) {
       <div id="layoutOverlay" class="layout-overlay"></div>
     </div>`;
   applyZoom();
-  if (layoutEditMode) loadLayoutElements();
+  // 常時編集可能モード：スライド切り替え時に自動でレイアウト要素を読み込む
+  // （editorロール以上のみ。viewerはドラッグ不可）
+  if (currentRole !== 'viewer') {
+    layoutElements = []; layoutDirty = false; selectedIdx = -1;
+    updateSaveBtn();
+    loadLayoutElements();
+  }
 }
 
 function applyZoom() {
@@ -1735,7 +1745,7 @@ function applyZoom() {
   }
   document.getElementById('zoomLabel').textContent = zoomPct + '%';
   // ズーム変更時にオーバーレイを再描画
-  if (layoutEditMode && layoutElements.length > 0) {
+  if (layoutElements.length > 0) {
     requestAnimationFrame(renderLayoutOverlay);
   }
 }
@@ -2215,7 +2225,7 @@ const SLIDE_EMU_W = 9144000;  // 10インチ
 const SLIDE_EMU_H = 5143500;  // 5.625インチ
 const EMU_PER_IN  = 914400;
 
-let layoutEditMode = false;
+// 常時編集可能モード（layoutEditModeは廃止、常にtrue扱い）
 let layoutElements = [];
 let layoutElementsSnapshot = []; // 最後に読み込み/保存した時点の位置スナップショット
 let layoutEntryName = null;
@@ -2226,29 +2236,10 @@ let dragInfo = null;
 // ハンドル定義：方向 → cursor / 位置クラス
 const HANDLES = ['nw','n','ne','e','se','s','sw','w'];
 
-function toggleLayoutEdit() {
-  layoutEditMode = !layoutEditMode;
-  const btn = document.getElementById('layoutEditBtn');
-  const saveBtn = document.getElementById('layoutSaveBtn');
-  btn.classList.toggle('active', layoutEditMode);
-  btn.textContent = layoutEditMode ? '✅ 編集中' : '✏️ 編集';
-  saveBtn.style.display = layoutEditMode ? 'inline-block' : 'none';
-  document.getElementById('layoutInfoBar').style.display = layoutEditMode ? 'block' : 'none';
-  const pNote = document.getElementById('previewNote');
-  if (pNote) pNote.style.display = layoutEditMode ? 'block' : 'none';
-  if (layoutEditMode) {
-    loadLayoutElements();
-    document.addEventListener('keydown', onLayoutKeydown);
-  } else {
-    clearLayoutOverlay();
-    layoutElements = []; layoutDirty = false; selectedIdx = -1;
-    document.removeEventListener('keydown', onLayoutKeydown);
-    showInfo(null);
-  }
-}
+// 常時編集可能モードのため toggleLayoutEdit は何もしない（後方互換のため残す）
+function toggleLayoutEdit() {}
 
 function onLayoutKeydown(e) {
-  if (!layoutEditMode) return;
   if (e.key === 'Escape') {
     deselectAll();
   }
@@ -2287,7 +2278,7 @@ async function loadLayoutElements() {
 }
 
 function onPreviewImgLoaded() {
-  if (layoutEditMode && layoutElements.length > 0) renderLayoutOverlay();
+  if (layoutElements.length > 0) renderLayoutOverlay();
 }
 
 function getScale() {
@@ -2637,8 +2628,9 @@ function showInfo(el) {
 function updateSaveBtn() {
   const btn = document.getElementById('layoutSaveBtn');
   if (!btn) return;
-  btn.textContent = layoutDirty ? '💾 保存 ●' : '💾 保存';
-  btn.disabled = false;
+  btn.textContent = layoutDirty ? '💾 保存' : '💾 保存';
+  btn.disabled = !layoutDirty;
+  btn.classList.toggle('dirty', layoutDirty);
 }
 
 // ====== Canvas即時プレビュー更新 ======
@@ -3349,9 +3341,9 @@ function applyRoleUI() {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
-    // レイアウト編集ボタンを非表示
-    const layoutEditBtn = document.getElementById('layoutEditBtn');
-    if (layoutEditBtn) layoutEditBtn.style.display = 'none';
+    // viewerは保存ボタンも非表示
+    const layoutSaveBtnV = document.getElementById('layoutSaveBtn');
+    if (layoutSaveBtnV) layoutSaveBtnV.style.display = 'none';
     // テキストエリアをreadonly（既にレンダリング済みのものに適用）
     document.querySelectorAll('.run-input').forEach(el => {
       el.setAttribute('readonly', '');
@@ -3893,6 +3885,9 @@ window.fetch = function(url, opts = {}) {
 
 // ページ読み込み時に権限初期化
 initRole();
+
+// 常時編集モード：キーボードショートカットをグローバル登録
+document.addEventListener('keydown', onLayoutKeydown);
 
 // 初期バッジ表示
 fetch(`/api/changelog?weekId=${currentWeekId}`).then(r=>r.json()).then(({log})=>{
