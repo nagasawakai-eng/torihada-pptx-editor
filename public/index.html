@@ -2644,7 +2644,14 @@ async function saveLayoutEdits() {
   const btn = document.getElementById('layoutSaveBtn');
   btn.textContent = '保存中...'; btn.disabled = true;
   try {
-    // ① 位置データをPPTXに書き込む
+    // ① 送信前の位置をログ
+    const slide = allSlides[currentSlideIdx];
+    console.log('[saveLayoutEdits] 送信 entryName:', layoutEntryName, 'elements:', layoutElements.length, 'weekId:', currentWeekId);
+    layoutElements.forEach(el => {
+      console.log(`  ${el.type}[${el.idx}] "${el.name}" x=${el.x} y=${el.y} cx=${el.cx} cy=${el.cy}`);
+    });
+
+    // ② 位置データをPPTXに書き込む
     const res = await fetch(`/api/update-positions?weekId=${currentWeekId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -2652,10 +2659,33 @@ async function saveLayoutEdits() {
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
+    console.log('[saveLayoutEdits] ✅ 位置保存成功');
     layoutDirty = false;
+
+    // ③ 書き込み後にサーバーから再読み込みして検証
+    try {
+      const verifyRes = await fetch(`/api/slide-positions/${slide.slideNum}?weekId=${currentWeekId}`);
+      const verifyData = await verifyRes.json();
+      if (verifyData.success) {
+        let mismatch = 0;
+        layoutElements.forEach(el => {
+          const actual = verifyData.elements.find(e => e.type === el.type && e.idx === el.idx);
+          if (actual && (actual.x !== el.x || actual.y !== el.y)) {
+            console.warn(`[verify] ⚠️ ${el.type}[${el.idx}] 書き込み失敗: 要求(${el.x},${el.y}) → 実際(${actual.x},${actual.y})`);
+            mismatch++;
+          }
+        });
+        if (mismatch === 0) {
+          console.log('[verify] ✅ 全要素の位置が正しく書き込まれました');
+        } else {
+          showToast(`⚠️ ${mismatch}件の要素が正しく保存されませんでした（コンソール確認）`);
+        }
+      }
+    } catch(ve) { console.log('[verify] 検証スキップ:', ve.message); }
+
     btn.textContent = '🔄 プレビュー更新中...'; btn.disabled = true;
 
-    // ② プレビューPNGを再生成（位置変更を画像に反映）
+    // ④ プレビューPNGを再生成（位置変更を画像に反映）
     try {
       const prevRes = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
         method: 'POST',
@@ -2664,7 +2694,6 @@ async function saveLayoutEdits() {
       if (prevRes.ok) {
         // キャッシュバスターつきで現在スライドのプレビューを再読み込み
         const bust = Date.now();
-        const slide = allSlides[currentSlideIdx];
         const num = String(slide.slideNum).padStart(2, '0');
         const imgEl = document.getElementById('previewImg');
         if (imgEl) {
@@ -2673,14 +2702,18 @@ async function saveLayoutEdits() {
         btn.textContent = '✅ 保存済';
         showToast('✅ 位置を保存してプレビューを更新しました');
       } else {
-        btn.textContent = '✅ 保存済（要手動更新）';
+        const errText = await prevRes.text().catch(() => '');
+        console.warn('[saveLayoutEdits] プレビュー再生成失敗:', prevRes.status, errText);
+        btn.textContent = '✅ 保存済（プレビュー手動更新）';
         showToast('✅ 位置を保存しました（プレビューは設定タブから再生成できます）');
       }
     } catch(pe) {
-      btn.textContent = '✅ 保存済（要手動更新）';
+      console.warn('[saveLayoutEdits] プレビューエラー:', pe);
+      btn.textContent = '✅ 保存済（プレビュー手動更新）';
     }
     setTimeout(() => { btn.textContent = '💾 保存'; btn.disabled = false; }, 3000);
   } catch(e) {
+    console.error('[saveLayoutEdits] 保存エラー:', e);
     alert('保存エラー: ' + e.message);
     btn.textContent = '💾 保存 ●'; btn.disabled = false;
   }

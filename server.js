@@ -830,11 +830,53 @@ app.post('/api/update-positions', requireEditor, (req, res) => {
   if (!ctx || !ctx.pptxPath || !ctx.exists) return res.status(404).json({ success: false, error: 'PPTXファイルがありません' });
   try {
     const { entryName, updates } = req.body;
+    if (!updates || !Array.isArray(updates)) return res.status(400).json({ success: false, error: 'updates が不正です' });
+
+    // ── デバッグ: 受信した更新内容をログ出力 ──
+    const movedEls = updates.filter(u => {
+      // ドラッグで変更された可能性のある要素のみ表示（移動が多いもの）
+      return true;
+    });
+    console.log(`[update-positions] ${entryName} / updates count: ${updates.length}`);
+    updates.slice(0, 5).forEach(u => {
+      console.log(`  ${u.type}[${u.idx}] "${u.name}" x=${u.x} y=${u.y} cx=${u.cx} cy=${u.cy}`);
+    });
+
     if (!fs.existsSync(ctx.backupPath)) fs.copyFileSync(ctx.pptxPath, ctx.backupPath);
     const buf = patchElementPositions(ctx.pptxPath, entryName, updates);
     fs.writeFileSync(ctx.pptxPath, buf);
+
+    // ── デバッグ: 書き込み後の実際の位置を確認 ──
+    try {
+      const AdmZip2 = require('adm-zip');
+      const zip2 = new AdmZip2(ctx.pptxPath);
+      const entry2 = zip2.getEntry(entryName);
+      if (entry2) {
+        const xmlAfter = entry2.getData().toString('utf8');
+        const elsAfter = extractElementPositions(xmlAfter);
+        console.log(`[update-positions] 書き込み後の要素数: ${elsAfter.length}`);
+        // 更新が要求されたものの実際の値を確認
+        const changed = updates.filter(u => {
+          const original = elsAfter.find(e => e.type === u.type && e.idx === u.idx);
+          return original && (original.x !== u.x || original.y !== u.y);
+        });
+        if (changed.length > 0) {
+          console.log(`[update-positions] ⚠️ ${changed.length}件の更新が適用されていません`);
+          changed.forEach(u => {
+            const actual = elsAfter.find(e => e.type === u.type && e.idx === u.idx);
+            console.log(`  ${u.type}[${u.idx}] 要求=${u.x},${u.y} 実際=${actual?.x},${actual?.y}`);
+          });
+        } else {
+          console.log(`[update-positions] ✅ 全更新が正常に適用されました`);
+        }
+      }
+    } catch(verifyErr) {
+      console.log(`[update-positions] 確認エラー: ${verifyErr.message}`);
+    }
+
     res.json({ success: true });
   } catch(e) {
+    console.error('[update-positions] エラー:', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });
