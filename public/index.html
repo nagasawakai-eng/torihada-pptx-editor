@@ -2773,8 +2773,8 @@ async function autoSaveLayoutPositions() {
   }
 }
 
-// イラスト挿入の即時Canvasプレビュー
-async function instantShowIllustOnCanvas(illustId, position) {
+// イラスト挿入の即時Canvasプレビュー（ノンブロッキング：awaitしない）
+function instantShowIllustOnCanvas(illustId, position) {
   const imgEl = document.getElementById('previewImg');
   if (!imgEl || !imgEl.complete || imgEl.naturalWidth < 10) return;
 
@@ -2782,25 +2782,22 @@ async function instantShowIllustOnCanvas(illustId, position) {
   const SLIDE_H_EMU = 6858000;
   const W = imgEl.naturalWidth, H = imgEl.naturalHeight;
 
-  // イラスト画像を取得
   const ill = new Image();
   ill.crossOrigin = 'anonymous';
+  // 画像ロード完了次第すぐCanvas合成（awaitせずonloadで処理）
+  ill.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(imgEl, 0, 0); // 現在のプレビューを下地にする
+    const sx = W / SLIDE_W_EMU, sy = H / SLIDE_H_EMU;
+    ctx.drawImage(ill,
+      Math.round(position.x * sx), Math.round(position.y * sy),
+      Math.round(position.cx * sx), Math.round(position.cy * sy)
+    );
+    imgEl.src = canvas.toDataURL('image/jpeg', 0.93);
+  };
   ill.src = `/illust-cache/${illustId}.png`;
-  await new Promise(res => { ill.onload = res; ill.onerror = res; setTimeout(res, 3000); });
-  if (!ill.naturalWidth) return;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(imgEl, 0, 0);
-
-  // EMU→ピクセル変換して描画
-  const sx = W / SLIDE_W_EMU, sy = H / SLIDE_H_EMU;
-  ctx.drawImage(ill,
-    Math.round(position.x * sx), Math.round(position.y * sy),
-    Math.round(position.cx * sx), Math.round(position.cy * sy)
-  );
-  imgEl.src = canvas.toDataURL('image/jpeg', 0.93);
 }
 
 async function saveLayoutEdits() {
@@ -3777,36 +3774,39 @@ async function handleIllustDrop(event) {
 
 // 実際の挿入処理
 async function doApplyIllustration(illustId, position) {
-  // ① 即座にCanvasでイラストをプレビュー表示（サーバー不要・< 500ms）
+  // ① Canvasに即座に表示（ノンブロッキング・画像ロード完了次第反映）
   instantShowIllustOnCanvas(illustId, position);
 
-  // ② 位置変更が未保存なら先に保存（PPTXへの競合書き込みを防止）
-  await ensureLayoutSaved();
+  // ② 位置保存 + イラスト挿入を並列実行（直列ではなく同時）
+  const positionSavePromise = (layoutDirty && layoutEntryName)
+    ? fetch(`/api/update-positions?weekId=${currentWeekId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ entryName: layoutEntryName, updates: layoutElements })
+      }).then(() => { layoutDirty = false; updateSaveBtn(); })
+      .catch(() => {})
+    : Promise.resolve();
 
-  showToast('⏳ イラストを挿入中...');
-  try {
-    const res = await fetch('/api/illustrations/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({
-        illustrationId: illustId,
-        slideIndex: currentSlideIdx,
-        weekId: currentWeekId,
-        position
-      })
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      showToast('✅ イラスト挿入完了！');
+  const applyPromise = fetch('/api/illustrations/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({
+      illustrationId: illustId,
+      slideIndex: currentSlideIdx,
+      weekId: currentWeekId,
+      position
+    })
+  });
 
-      // イラスト追加後にレイアウト要素を再読み込み（要素数が変わるため）
-      await loadLayoutElements();
-      // ※ LibreOfficeは起動しない。Canvasプレビューとレイアウト再読み込みのみ。
-    } else {
-      throw new Error(data.error || '挿入に失敗しました');
-    }
-  } catch(e) {
-    showToast('❌ エラー: ' + e.message);
+  // 両方完了を待つ（並列）
+  const [, applyRes] = await Promise.all([positionSavePromise, applyPromise]);
+  const data = await applyRes.json();
+
+  if (applyRes.ok && data.success) {
+    showToast('✅ イラスト挿入完了！');
+    loadLayoutElements(); // awaitしない（バックグラウンドで更新）
+  } else {
+    showToast('❌ エラー: ' + (data.error || '挿入に失敗しました'));
   }
 }
 
