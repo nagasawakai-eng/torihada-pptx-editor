@@ -1101,6 +1101,176 @@ app.post('/api/fishaudio/tts', async (req, res) => {
   }
 });
 
+// ====== MP4エクスポート ======
+
+const exportJobs = new Map();
+
+function ffmpegRun(args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg failed (code ${code}): ${stderr.slice(-400)}`));
+    });
+    proc.on('error', e => reject(new Error(`FFmpeg起動失敗: ${e.message}`)));
+  });
+}
+
+async function runExportJob(job, weekId, voiceId, speed) {
+  const apiKey = getFishAudioKey();
+
+  let scripts = {};
+  try { scripts = JSON.parse(fs.readFileSync(path.join(__dirname, 'scripts.json'), 'utf8')); } catch(e) {}
+
+  // プレビューPNG一覧
+  const weekPreviewDir = path.join(__dirname, 'preview', weekId);
+  const rootPreviewDir = path.join(__dirname, 'preview');
+  const useDir = fs.existsSync(weekPreviewDir) ? weekPreviewDir : rootPreviewDir;
+  const slideFiles = fs.readdirSync(useDir)
+    .filter(f => /^slide_\d+\.png$/i.test(f))
+    .sort();
+  if (!slideFiles.length) throw new Error('スライドPNGが見つかりません');
+
+  job.total = slideFiles.length;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pptx-export-'));
+  const segments = [];
+
+  const readingMap = { 'TORIHADA': 'とりはだ', 'Torihada': 'とりはだ', 'torihada': 'とりはだ' };
+
+  try {
+    for (let i = 0; i < slideFiles.length; i++) {
+      const slideFile = slideFiles[i];
+      const slideNum = parseInt(slideFile.match(/\d+/)[0], 10);
+      const rawScript = scripts[String(slideNum)] || '';
+      const slidePng = path.join(useDir, slideFile);
+      const segFile = path.join(tmpDir, `seg_${String(i).padStart(3, '0')}.mp4`);
+
+      job.progress = i;
+      job.message = `スライド ${slideNum} を処理中... (${i + 1}/${slideFiles.length})`;
+
+      if (rawScript && apiKey) {
+        let text = rawScript;
+        for (const [w, r] of Object.entries(readingMap)) text = text.split(w).join(r);
+
+        const audioFile = path.join(tmpDir, `audio_${i}.mp3`);
+        try {
+          const ttsRes = await fetch('https://api.fish.audio/v1/tts', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text, reference_id: voiceId || null, format: 'mp3',
+              mp3_bitrate: 128, normalize: true, latency: 'normal',
+            })
+          });
+          if (!ttsRes.ok) throw new Error(`TTS HTTP ${ttsRes.status}`);
+          fs.writeFileSync(audioFile, Buffer.from(await ttsRes.arrayBuffer()));
+
+          await ffmpegRun([
+            '-loop', '1', '-i', slidePng,
+            '-i', audioFile,
+            '-c:v', 'libx264', '-tune', 'stillimage',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-pix_fmt', 'yuv420p', '-shortest',
+            '-y', segFile
+          ]);
+        } catch(ttsErr) {
+          console.warn(`[export] TTS失敗 slide ${slideNum}: ${ttsErr.message} → 無音3秒`);
+          await ffmpegRun([
+            '-loop', '1', '-i', slidePng,
+            '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+            '-c:v', 'libx264', '-tune', 'stillimage',
+            '-c:a', 'aac', '-b:a', '64k',
+            '-pix_fmt', 'yuv420p', '-t', '3',
+            '-y', segFile
+          ]);
+        }
+      } else {
+        await ffmpegRun([
+          '-loop', '1', '-i', slidePng,
+          '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+          '-c:v', 'libx264', '-tune', 'stillimage',
+          '-c:a', 'aac', '-b:a', '64k',
+          '-pix_fmt', 'yuv420p', '-t', '3',
+          '-y', segFile
+        ]);
+      }
+      segments.push(segFile);
+    }
+
+    job.message = 'ファイルを結合中...';
+    const concatFile = path.join(tmpDir, 'concat.txt');
+    fs.writeFileSync(concatFile, segments.map(s => `file '${s}'`).join('\n'));
+    const outputFile = path.join(tmpDir, 'output.mp4');
+    await ffmpegRun([
+      '-f', 'concat', '-safe', '0', '-i', concatFile,
+      '-c', 'copy', '-y', outputFile
+    ]);
+
+    job.outputFile = outputFile;
+    job.tmpDir = tmpDir;
+    job.status = 'done';
+    job.progress = slideFiles.length;
+    job.message = '完成！';
+  } catch(e) {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch(_) {}
+    throw e;
+  }
+}
+
+// エクスポート開始
+app.post('/api/export-video/start', async (req, res) => {
+  const { weekId = 'week1', voiceId = '', speed = 0.93 } = req.body;
+  const jobId = crypto.randomBytes(8).toString('hex');
+  const job = { id: jobId, status: 'running', progress: 0, total: 0, message: '準備中...', outputFile: null, tmpDir: null };
+  exportJobs.set(jobId, job);
+  runExportJob(job, weekId, voiceId, speed).catch(e => {
+    job.status = 'error';
+    job.message = e.message;
+  });
+  res.json({ success: true, jobId });
+});
+
+// 進捗確認（SSE）
+app.get('/api/export-video/progress/:jobId', (req, res) => {
+  const job = exportJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'ジョブが見つかりません' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (d) => res.write(`data: ${JSON.stringify(d)}\n\n`);
+  const timer = setInterval(() => {
+    send({ status: job.status, progress: job.progress, total: job.total, message: job.message });
+    if (job.status === 'done' || job.status === 'error') {
+      clearInterval(timer);
+      res.end();
+    }
+  }, 800);
+  req.on('close', () => clearInterval(timer));
+});
+
+// MP4ダウンロード
+app.get('/api/export-video/download/:jobId', (req, res) => {
+  const job = exportJobs.get(req.params.jobId);
+  if (!job || job.status !== 'done' || !job.outputFile) {
+    return res.status(404).json({ error: 'エクスポートが準備できていません' });
+  }
+  const filename = `${job.weekId || 'video'}_study.mp4`;
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const stream = fs.createReadStream(job.outputFile);
+  stream.pipe(res);
+  res.on('finish', () => {
+    try { fs.rmSync(job.tmpDir, { recursive: true, force: true }); } catch(_) {}
+    exportJobs.delete(job.id);
+  });
+  stream.on('error', () => res.status(500).end());
+});
+
 // ====== イラスト推奨・挿入システム ======
 
 const ILLUST_CATALOG_PATH = path.join(__dirname, 'illustrations.catalog.json');

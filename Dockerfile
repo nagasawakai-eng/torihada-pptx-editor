@@ -6,6 +6,7 @@ RUN apt-get update && \
       libreoffice \
       fonts-noto-cjk \
       poppler-utils \
+      ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

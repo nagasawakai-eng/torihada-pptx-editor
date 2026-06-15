@@ -1045,6 +1045,7 @@ textarea.run-input.changed {
           <button class="vr-speed-btn" onclick="vrSetSpeed(1.00)">標準</button>
           <button class="vr-speed-btn" onclick="vrSetSpeed(1.15)">速め</button>
           <button class="vr-script-edit-btn" onclick="vrEditScript()" title="このスライドの原稿を編集">✏️ 原稿編集</button>
+          <button class="vr-script-edit-btn" id="vrExportBtn" onclick="startVideoExport()" title="全スライドをMP4で保存" style="background:#16a34a;color:white;margin-left:8px;">📥 MP4保存</button>
         </div>
       </div>
       <div class="vr-speaker-row">
@@ -1073,6 +1074,20 @@ textarea.run-input.changed {
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- MP4エクスポート 進捗モーダル -->
+<div id="vrExportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:20000;align-items:center;justify-content:center;">
+  <div style="background:#1a202c;border:1px solid #2d3748;border-radius:16px;padding:32px 40px;width:420px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
+    <div style="font-size:28px;margin-bottom:12px;">🎬</div>
+    <h3 style="color:#e2e8f0;font-size:16px;margin-bottom:8px;">MP4を生成中...</h3>
+    <p id="vrExportMsg" style="color:#a0aec0;font-size:13px;margin-bottom:20px;">準備中...</p>
+    <div style="background:#2d3748;border-radius:8px;height:10px;overflow:hidden;margin-bottom:12px;">
+      <div id="vrExportBar" style="background:#16a34a;height:100%;width:0%;transition:width 0.4s;border-radius:8px;"></div>
+    </div>
+    <p id="vrExportPct" style="color:#718096;font-size:12px;margin-bottom:24px;">0 / 0 スライド</p>
+    <button onclick="cancelVideoExport()" style="padding:8px 24px;background:#4a5568;color:#e2e8f0;border:none;border-radius:8px;font-size:13px;cursor:pointer;">キャンセル</button>
   </div>
 </div>
 
@@ -3436,6 +3451,84 @@ function applyRoleUI() {
     const shareBtn = document.getElementById('shareBtn');
     if (shareBtn) shareBtn.style.display = 'inline-flex';
   }
+}
+
+// ====== MP4エクスポート ======
+let _vrExportEventSource = null;
+let _vrExportJobId = null;
+
+async function startVideoExport() {
+  const voiceId = document.getElementById('vrSpeakerSelect')?.value || '';
+  const weekId = currentWeekId || 'week1';
+
+  // モーダル表示
+  const modal = document.getElementById('vrExportModal');
+  modal.style.display = 'flex';
+  document.getElementById('vrExportMsg').textContent = '準備中...';
+  document.getElementById('vrExportBar').style.width = '0%';
+  document.getElementById('vrExportPct').textContent = '0 / 0 スライド';
+
+  try {
+    const res = await fetch('/api/export-video/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ weekId, voiceId, speed: vrState.speed })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.jobId) throw new Error(data.error || '開始に失敗しました');
+    _vrExportJobId = data.jobId;
+    listenExportProgress(data.jobId);
+  } catch(e) {
+    modal.style.display = 'none';
+    alert('エクスポートエラー: ' + e.message);
+  }
+}
+
+function listenExportProgress(jobId) {
+  if (_vrExportEventSource) _vrExportEventSource.close();
+  _vrExportEventSource = new EventSource(`/api/export-video/progress/${jobId}`);
+
+  _vrExportEventSource.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById('vrExportMsg').textContent = d.message || '';
+    const pct = d.total > 0 ? Math.round((d.progress / d.total) * 100) : 0;
+    document.getElementById('vrExportBar').style.width = pct + '%';
+    document.getElementById('vrExportPct').textContent = `${d.progress} / ${d.total} スライド`;
+
+    if (d.status === 'done') {
+      _vrExportEventSource.close();
+      _vrExportEventSource = null;
+      document.getElementById('vrExportModal').style.display = 'none';
+      // ダウンロード開始
+      const a = document.createElement('a');
+      a.href = `/api/export-video/download/${jobId}`;
+      a.download = `${currentWeekId || 'video'}_study.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast('✅ MP4のダウンロードを開始しました！');
+      _vrExportJobId = null;
+    } else if (d.status === 'error') {
+      _vrExportEventSource.close();
+      _vrExportEventSource = null;
+      document.getElementById('vrExportModal').style.display = 'none';
+      alert('エクスポートエラー: ' + d.message);
+      _vrExportJobId = null;
+    }
+  };
+
+  _vrExportEventSource.onerror = () => {
+    _vrExportEventSource.close();
+    _vrExportEventSource = null;
+    document.getElementById('vrExportModal').style.display = 'none';
+    alert('進捗の取得に失敗しました。サーバーログを確認してください。');
+  };
+}
+
+function cancelVideoExport() {
+  if (_vrExportEventSource) { _vrExportEventSource.close(); _vrExportEventSource = null; }
+  document.getElementById('vrExportModal').style.display = 'none';
+  _vrExportJobId = null;
 }
 
 // 読み上げパネルのボイス変更→動画レビューに同期
