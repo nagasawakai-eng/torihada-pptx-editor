@@ -1356,6 +1356,7 @@ textarea.run-input.changed {
       <div class="script-side-title" id="scriptSideTitle">スライドタイトル</div>
       <div class="script-side-audio">
         <select id="fishVoiceSelect"
+          onchange="syncFishVoiceToVR(this.value)"
           style="flex:1;font-size:10px;padding:3px 6px;border:1px solid #4a5568;border-radius:6px;
                  color:#e2e8f0;background:#2d3748;cursor:pointer;">
           <option value="">ボイス読込中...</option>
@@ -2890,6 +2891,9 @@ async function vrLoadVoices() {
         opt.textContent = v.name;
         sel.appendChild(opt);
       });
+      // 読み上げパネルで選択中のボイスに合わせる
+      const fishVoice = document.getElementById('fishVoiceSelect')?.value;
+      if (fishVoice) sel.value = fishVoice;
     } else {
       // VOICEVOX
       const res = await fetch('http://localhost:50021/speakers');
@@ -3096,6 +3100,11 @@ function vrSetSpeed(s) {
 
 function vrSetSpeaker(id) {
   vrState.speaker = parseInt(id, 10);
+  // 動画レビューでFishAudio選択時→読み上げパネルにも反映
+  if (vrEngine === 'fishaudio') {
+    const fishSel = document.getElementById('fishVoiceSelect');
+    if (fishSel) fishSel.value = id;
+  }
   if (vrState.playing) {
     if (vrState.audio) { vrState.audio.pause(); vrState.audio = null; }
     if (vrState.blobUrl) { URL.revokeObjectURL(vrState.blobUrl); vrState.blobUrl = null; }
@@ -3427,6 +3436,13 @@ function applyRoleUI() {
     const shareBtn = document.getElementById('shareBtn');
     if (shareBtn) shareBtn.style.display = 'inline-flex';
   }
+}
+
+// 読み上げパネルのボイス変更→動画レビューに同期
+function syncFishVoiceToVR(voiceId) {
+  if (vrEngine !== 'fishaudio') return;
+  const vrSel = document.getElementById('vrSpeakerSelect');
+  if (vrSel) vrSel.value = voiceId;
 }
 
 // ====== FishAudio 台本読み上げ ======
