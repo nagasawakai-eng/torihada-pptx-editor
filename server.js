@@ -1118,20 +1118,78 @@ function ffmpegRun(args) {
   });
 }
 
+function generatePreviewsSync(weekId, ctx) {
+  return new Promise((resolve, reject) => {
+    const soffice = process.platform === 'win32'
+      ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
+      : 'soffice';
+    const tmpDir = path.join(os.tmpdir(), `preview_export_${weekId}_${Date.now()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const pptxName = path.basename(ctx.pptxPath);
+    const pdfPath  = path.join(tmpDir, pptxName.replace(/\.pptx$/i, '.pdf'));
+
+    const { execFile } = require('child_process');
+    execFile(soffice, ['--headless', '--convert-to', 'pdf', '--outdir', tmpDir, ctx.pptxPath],
+      { timeout: 120000 }, (err) => {
+        if (err) { fs.rmSync(tmpDir, { recursive: true, force: true }); return reject(new Error('PDF変換失敗: ' + err.message)); }
+        if (!fs.existsSync(pdfPath)) { fs.rmSync(tmpDir, { recursive: true, force: true }); return reject(new Error('PDFが生成されませんでした')); }
+        fs.mkdirSync(ctx.previewDir, { recursive: true });
+        const outPrefix = path.join(ctx.previewDir, 'slide');
+        execFile('pdftoppm', ['-png', '-r', '150', pdfPath, outPrefix],
+          { timeout: 180000 }, (err2) => {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+            if (err2) return reject(new Error('画像変換失敗: ' + err2.message));
+            try {
+              fs.readdirSync(ctx.previewDir).forEach(f => {
+                const m = f.match(/slide-(\d+)\.png$/i);
+                if (m) {
+                  const newName = `slide_${String(parseInt(m[1])).padStart(2, '0')}.png`;
+                  fs.renameSync(path.join(ctx.previewDir, f), path.join(ctx.previewDir, newName));
+                }
+              });
+            } catch(e) {}
+            resolve();
+          });
+      });
+  });
+}
+
 async function runExportJob(job, weekId, voiceId, speed) {
   const apiKey = getFishAudioKey();
 
   let scripts = {};
   try { scripts = JSON.parse(fs.readFileSync(path.join(__dirname, 'scripts.json'), 'utf8')); } catch(e) {}
 
-  // プレビューPNG一覧
+  // プレビューPNG一覧（なければ自動生成）
   const weekPreviewDir = path.join(__dirname, 'preview', weekId);
   const rootPreviewDir = path.join(__dirname, 'preview');
-  const useDir = fs.existsSync(weekPreviewDir) ? weekPreviewDir : rootPreviewDir;
-  const slideFiles = fs.readdirSync(useDir)
-    .filter(f => /^slide_\d+\.png$/i.test(f))
-    .sort();
-  if (!slideFiles.length) throw new Error('スライドPNGが見つかりません');
+
+  let useDir = null;
+  let slideFiles = [];
+
+  const findSlides = (dir) => fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter(f => /^slide_\d+\.png$/i.test(f)).sort()
+    : [];
+
+  slideFiles = findSlides(weekPreviewDir);
+  if (slideFiles.length) { useDir = weekPreviewDir; }
+  else {
+    slideFiles = findSlides(rootPreviewDir);
+    if (slideFiles.length) { useDir = rootPreviewDir; }
+  }
+
+  if (!slideFiles.length) {
+    // PNG未生成 → LibreOfficeで生成
+    const ctx = resolveWeekPaths(weekId);
+    if (!ctx || !ctx.pptxPath || !ctx.exists) {
+      throw new Error(`PPTXファイルが見つかりません (${weekId})`);
+    }
+    job.message = 'スライド画像を生成中（初回のみ）...';
+    await generatePreviewsSync(weekId, ctx);
+    slideFiles = findSlides(weekPreviewDir);
+    useDir = weekPreviewDir;
+    if (!slideFiles.length) throw new Error('プレビュー生成に失敗しました');
+  }
 
   job.total = slideFiles.length;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pptx-export-'));
