@@ -2,7 +2,7 @@
   "weeks": [
     { "id": "week1", "label": "マインド・規約・契約書概要（社内、コーポ連携）", "file": "TORIHADA_第1週_研修資料_v2.pptx" },
     { "id": "week2", "label": "PRルール・薬事（社内 ディレクション）", "file": "TORIHADA_第2週_研修資料.pptx" },
-    { "id": "week3", "label": "進行フロー・ビジネス連絡（社内 ディレクション）", "file": null },
+    { "id": "week3", "label": "進行フロー・ビジネス連絡（社内 ディレクション）", "file": "TORIHADA_第3週_研修資料.pptx" },
     { "id": "week4", "label": "所属・選ばれるクリエイターとは（PPP・営業チーム）", "file": null }
   ]
 }
