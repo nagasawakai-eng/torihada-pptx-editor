@@ -1701,11 +1701,32 @@ const PORT = process.env.PORT || 3000;
 const NGROK_PATH = 'C:\\Users\\長澤開\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Ngrok.Ngrok_Microsoft.Winget.Source_8wekyb3d8bbwe\\ngrok.exe';
 const NGROK_CONFIG = path.join(process.env.USERPROFILE || 'C:\\Users\\長澤開', 'AppData\\Local\\ngrok\\ngrok.yml');
 
+async function autoGenerateMissingPreviews() {
+  const config = loadWeeksConfig();
+  for (const week of config.weeks) {
+    if (!week.file) continue;
+    const ctx = resolveWeekPaths(week.id);
+    if (!ctx || !ctx.exists) continue;
+    const hasPreviews = fs.existsSync(ctx.previewDir) &&
+      fs.readdirSync(ctx.previewDir).some(f => /^slide_\d+\.png$/.test(f));
+    if (!hasPreviews) {
+      console.log(`[startup] プレビュー自動生成: ${week.id}`);
+      try {
+        await generatePreviewsSync(week.id, ctx);
+        console.log(`[startup] プレビュー生成完了: ${week.id}`);
+      } catch(e) {
+        console.error(`[startup] プレビュー生成失敗 ${week.id}: ${e.message}`);
+      }
+    }
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`\n✅ PPTX エディター起動中`);
   console.log(`👉 ローカル:  http://localhost:${PORT}`);
   console.log(`📄 編集対象: ${PPTX_PATH}`);
   console.log(`\n🌐 外部共有URL を生成中...`);
+  autoGenerateMissingPreviews().catch(e => console.error('[startup] プレビュー生成エラー:', e.message));
 
   function onTunnelUrl(url) {
     const pad = Math.max(0, 44 - url.length);
