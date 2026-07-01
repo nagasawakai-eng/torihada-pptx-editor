@@ -1108,7 +1108,7 @@ textarea.run-input.changed {
     <button class="btn" id="undoBtn" onclick="globalUndo()" title="元に戻す (Ctrl+Z)" style="background:#4a5568;color:white;font-size:13px;padding:5px 10px;min-width:36px;">↩</button>
     <button class="btn" id="redoBtn" onclick="globalRedo()" title="やり直す (Ctrl+Shift+Z)" style="background:#4a5568;color:white;font-size:13px;padding:5px 10px;min-width:36px;">↪</button>
     <button class="btn btn-restore" id="restoreBtn" onclick="restoreBackup()">元に戻す</button>
-    <button class="btn" id="pdfBtn" style="background:#2d8c6e;color:white;" onclick="downloadPdf()">📄 PDFに変換</button>
+    <button class="btn" id="pdfBtn" style="background:#2d8c6e;color:white;" onclick="downloadPptx()">📥 パワポをDL</button>
     <button class="btn" id="shareBtn" style="background:#d97706;color:white;display:none;" onclick="openShareModal()">🔗 シェア</button>
     <button class="btn btn-save" id="saveBtn" onclick="saveAll()">💾 保存する</button>
   </div>
@@ -4061,24 +4061,24 @@ fetch(`/api/changelog?weekId=${currentWeekId}`).then(r=>r.json()).then(({log})=>
   if(log && log.length>0){ badge.style.display='flex'; badge.textContent=log.length; }
 });
 
-// ====== PDF ダウンロード ======
-async function downloadPdf() {
+// ====== PPTXダウンロード ======
+async function downloadPptx() {
   const btn = document.getElementById('pdfBtn');
   const orig = btn.textContent;
-  btn.textContent = '⏳ 変換中...';
+  btn.textContent = '⏳ 準備中...';
   btn.disabled = true;
   btn.style.opacity = '0.7';
   try {
-    const res = await fetch(`/download-pdf?weekId=${currentWeekId}`);
+    const res = await fetch(`/download-pptx?weekId=${currentWeekId}`);
     if (!res.ok) {
       const { error } = await res.json().catch(() => ({ error: 'サーバーエラー' }));
-      alert('PDF変換に失敗しました: ' + error);
+      alert('ダウンロードに失敗しました: ' + error);
       return;
     }
     const blob = await res.blob();
     const cd = res.headers.get('Content-Disposition') || '';
     const match = cd.match(/filename\*=UTF-8''(.+)/i) || cd.match(/filename="?([^"]+)"?/i);
-    const filename = match ? decodeURIComponent(match[1]) : '研修資料.pdf';
+    const filename = match ? decodeURIComponent(match[1]) : '研修資料.pptx';
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -4086,7 +4086,7 @@ async function downloadPdf() {
     a.click();
     URL.revokeObjectURL(url);
   } catch(e) {
-    alert('PDF変換中にエラーが発生しました: ' + e.message);
+    alert('ダウンロード中にエラーが発生しました: ' + e.message);
   } finally {
     btn.textContent = orig;
     btn.disabled = false;

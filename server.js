@@ -1626,41 +1626,16 @@ const { spawn, execFile } = require('child_process');
 const os = require('os');
 
 // ─── PDF ダウンロード ───
-app.get('/download-pdf', (req, res) => {
+app.get('/download-pptx', (req, res) => {
   const ctx = resolveWeekPaths(getWeekId(req)) || resolveWeekPaths('week1');
   if (!ctx || !ctx.pptxPath || !ctx.exists) {
     return res.status(404).json({ error: 'PPTXファイルがありません' });
   }
-  const soffice = process.platform === 'win32'
-    ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
-    : 'soffice';
-
-  const outDir   = os.tmpdir();
   const pptxName = path.basename(ctx.pptxPath);
-  const pdfName  = pptxName.replace(/\.pptx$/i, '.pdf');
-  const pdfPath  = path.join(outDir, pdfName);
-
-  if (fs.existsSync(pdfPath)) {
-    try { fs.unlinkSync(pdfPath); } catch(e) {}
-  }
-
-  execFile(soffice, [
-    '--headless', '--convert-to', 'pdf', '--outdir', outDir, ctx.pptxPath
-  ], { timeout: 60000 }, (err) => {
-    if (err) {
-      console.error('PDF変換エラー:', err);
-      return res.status(500).json({ error: 'PDF変換に失敗しました: ' + err.message });
-    }
-    if (!fs.existsSync(pdfPath)) {
-      return res.status(500).json({ error: 'PDFファイルが生成されませんでした' });
-    }
-    const downloadName = encodeURIComponent(pdfName);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${downloadName}`);
-    const stream = fs.createReadStream(pdfPath);
-    stream.pipe(res);
-    stream.on('close', () => { try { fs.unlinkSync(pdfPath); } catch(e) {} });
-  });
+  const downloadName = encodeURIComponent(pptxName);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${downloadName}`);
+  fs.createReadStream(ctx.pptxPath).pipe(res);
 });
 
 // ─── GitHub Webhook（自動 git pull） ───
