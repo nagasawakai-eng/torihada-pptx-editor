@@ -164,7 +164,7 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
 
 /* ====== サイドバー ====== */
 .sidebar {
-  width: 200px;
+  width: 180px;
   background: white;
   border-right: 1px solid #e2e8f0;
   display: flex;
@@ -187,12 +187,12 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
 .slide-list { overflow-y: auto; flex: 1; }
 
 .slide-thumb {
-  padding: 9px 12px;
+  padding: 8px 10px;
   cursor: pointer;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid #f0f0f0;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   transition: background 0.15s;
   position: relative;
 }
@@ -200,13 +200,38 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
 .slide-thumb.active {
   background: #fef2f5;
   border-left: 3px solid #e94560;
-  padding-left: 9px;
+  padding-left: 7px;
 }
 
+.slide-thumb-header {
+  display: flex; align-items: center; gap: 6px;
+}
+
+.slide-thumb-img-wrap {
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #f0f2f5;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  position: relative;
+}
+.slide-thumb-img-wrap img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.slide-thumb-img-wrap.updating::after {
+  content: '更新中…';
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,0.8);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #718096;
+}
+.slide-thumb.active .slide-thumb-img-wrap { border-color: #e94560; }
+
 .slide-num {
-  width: 24px; height: 24px;
+  width: 22px; height: 22px;
   background: #edf2f7;
-  border-radius: 5px;
+  border-radius: 4px;
   display: flex; align-items: center; justify-content: center;
   font-size: 10px; font-weight: 700; color: #4a5568;
   flex-shrink: 0;
@@ -215,14 +240,14 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
 
 .slide-info { flex: 1; overflow: hidden; }
 .slide-title-preview {
-  font-size: 11px; color: #4a5568; line-height: 1.4;
+  font-size: 10px; color: #4a5568; line-height: 1.4;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 .slide-change-count {
   font-size: 10px; font-weight: 700;
   background: #e94560; color: white;
-  padding: 2px 6px; border-radius: 10px;
+  padding: 2px 5px; border-radius: 10px;
   display: none; flex-shrink: 0;
 }
 .slide-thumb.modified .slide-change-count { display: block; }
@@ -1415,6 +1440,7 @@ let currentSlideIdx = 0;
 let pendingChanges = {};   // key: "slideIdx-shapeIdx-paraIdx-runIdx" → newText
 let originalValues = {};   // 元テキスト
 let currentWeekId  = 'week1';  // 現在表示中の週
+let thumbVersion   = Date.now(); // サムネイルキャッシュバスター
 
 // ====== Undo / Redo スタック ======
 const _appUndoStack = [];   // [{changes:[{key,from,to}]}]
@@ -1610,14 +1636,22 @@ function renderSidebar() {
     const firstShape = slide.shapes[0];
     const previewText = firstShape?.paragraphs[0]?.runs[0]?.text || `スライド ${slide.slideNum}`;
     const hasScript = !!(allScripts[String(slide.slideNum)]?.trim());
+    const num = String(slide.slideNum).padStart(2, '0');
+    const imgSrc = `/preview/${currentWeekId}/slide_${num}.png?v=${thumbVersion}`;
     return `
       <div class="slide-thumb" id="thumb-${idx}" onclick="renderSlide(${idx})">
-        <div class="slide-num">${slide.slideNum}</div>
-        <div class="slide-info">
-          <div class="slide-title-preview">${escH(previewText)}</div>
-          ${hasScript ? `<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-top:2px;">🎙️ 台本あり</div>` : ''}
+        <div class="slide-thumb-img-wrap" id="thumb-img-wrap-${idx}">
+          <img src="${imgSrc}" alt="Slide ${slide.slideNum}"
+            onerror="this.parentElement.style.background='#f0f2f5';this.style.display='none'">
         </div>
-        <div class="slide-change-count" id="count-${idx}">0</div>
+        <div class="slide-thumb-header">
+          <div class="slide-num">${slide.slideNum}</div>
+          <div class="slide-info">
+            <div class="slide-title-preview">${escH(previewText)}</div>
+            ${hasScript ? `<div style="font-size:9px;color:#7c3aed;font-weight:700;">🎙️</div>` : ''}
+          </div>
+          <div class="slide-change-count" id="count-${idx}">0</div>
+        </div>
       </div>`;
   }).join('');
 }
@@ -2122,21 +2156,41 @@ function renderScriptAllList() {
 }
 
 // ====== プレビュー再生成ヘルパー ======
-async function regeneratePreview(silent = false) {
+async function regeneratePreview(silent = false, modifiedSlideNums = []) {
+  // 編集スライドのサムネイルに「更新中」表示
+  const wrapEls = modifiedSlideNums.map(n =>
+    document.getElementById(`thumb-img-wrap-${allSlides.findIndex(s => s.slideNum === n)}`)
+  ).filter(Boolean);
+  wrapEls.forEach(el => el.classList.add('updating'));
+
   try {
     const prevRes = await fetch(`/api/weeks/${currentWeekId}/generate-preview`, {
       method: 'POST', headers: authHeaders()
     });
     if (prevRes.ok) {
+      // キャッシュバスターを更新してサムネイルを全リフレッシュ
+      thumbVersion = Date.now();
+      allSlides.forEach((slide, idx) => {
+        const num = String(slide.slideNum).padStart(2, '0');
+        const wrap = document.getElementById(`thumb-img-wrap-${idx}`);
+        if (wrap) {
+          const img = wrap.querySelector('img');
+          if (img) img.src = `/preview/${currentWeekId}/slide_${num}.png?v=${thumbVersion}`;
+          wrap.classList.remove('updating');
+        }
+      });
+      // 現在表示中のプレビューも更新
       const slide = allSlides[currentSlideIdx];
       if (slide) {
         const num = String(slide.slideNum).padStart(2, '0');
         const imgEl = document.getElementById('previewImg');
-        if (imgEl) imgEl.src = `/preview/${currentWeekId}/slide_${num}.png?v=${Date.now()}`;
+        if (imgEl) imgEl.src = `/preview/${currentWeekId}/slide_${num}.png?v=${thumbVersion}`;
       }
       if (!silent) showToast('🖼 プレビューを更新しました');
     }
-  } catch(e) { /* preview generation error is non-fatal */ }
+  } catch(e) {
+    wrapEls.forEach(el => el.classList.remove('updating'));
+  }
 }
 
 // ====== 保存 ======
@@ -2154,11 +2208,13 @@ async function saveAll(opts = {}) {
   await ensureLayoutSaved();
 
   const changedEntries = {};
+  const modifiedSlideNums = new Set();
 
   for (const [key, newText] of Object.entries(pendingChanges)) {
     if (newText === originalValues[key]) continue;
     const [slideIdx, shapeIdx, paraIdx, runIdx] = key.split('-').map(Number);
     const slide = allSlides[slideIdx];
+    modifiedSlideNums.add(slide.slideNum);
     if (!changedEntries[slide.entryName]) {
       changedEntries[slide.entryName] = { entryName: slide.entryName, shapes: [] };
     }
@@ -2205,7 +2261,7 @@ async function saveAll(opts = {}) {
       updateChangesTab();
       if (!silent) showStatus('✅ 保存しました', 'success');
       // プレビュー再生成（バックグラウンドで実行）
-      regeneratePreview(silent);
+      regeneratePreview(silent, [...modifiedSlideNums]);
       saveBtn.disabled = false;
       saveBtn.textContent = '💾 保存する';
       return true;
