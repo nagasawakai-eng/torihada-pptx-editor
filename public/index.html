@@ -1505,11 +1505,12 @@ async function loadWeekTabs() {
     const data = await res.json();
     if (!data.success) return;
     const bar = document.getElementById('weekTabBar');
-    const isAdmin = currentRole === 'admin';
+    const isAdmin  = currentRole === 'admin';
+    const isEditor = currentRole === 'editor' || currentRole === 'admin';
 
     const tabsHtml = data.weeks.map((w, i) => {
       const isActive    = w.id === currentWeekId;
-      const canAccess   = w.hasFile || isAdmin;
+      const canAccess   = w.hasFile || isEditor;
       const weekNum     = `【第${i + 1}週】`;
       const badge       = w.hasFile ? '' : `<span class="week-badge-new">準備中</span>`;
       const clickAction = w.hasFile ? `switchWeek('${w.id}')` : `openUploadModal('${w.id}')`;
@@ -1613,8 +1614,8 @@ async function loadSlides() {
         `<div style="color:#a0aec0;text-align:center;padding:40px 0;">
           <div style="font-size:40px;margin-bottom:12px;">📁</div>
           <div style="font-weight:600;margin-bottom:8px;">PPTXファイルがありません</div>
-          <div style="font-size:12px;">${currentRole === 'admin' ? '下のアップロードボタンから追加してください' : '管理者にPPTXファイルの追加を依頼してください'}</div>
-          ${currentRole === 'admin' ? `<button onclick="openUploadModal('${currentWeekId}')" style="margin-top:16px;padding:8px 20px;background:#e94560;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">📤 PPTXをアップロード</button>` : ''}
+          <div style="font-size:12px;">${['admin','editor'].includes(currentRole) ? '下のアップロードボタンから追加してください' : '管理者にPPTXファイルの追加を依頼してください'}</div>
+          ${['admin','editor'].includes(currentRole) ? `<button onclick="openUploadModal('${currentWeekId}')" style="margin-top:16px;padding:8px 20px;background:#e94560;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">📤 PPTXをアップロード</button>` : ''}
         </div>`;
       return;
     }

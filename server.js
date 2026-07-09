@@ -246,9 +246,9 @@ app.delete('/api/weeks/:weekId', requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
-// ─── PPTXファイルアップロード（管理者のみ） ───
+// ─── PPTXファイルアップロード（editor以上） ───
 app.post('/api/weeks/:weekId/upload',
-  requireRole('admin'),
+  requireEditor,
   express.raw({ type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', limit: '200mb' }),
   (req, res) => {
     const { weekId } = req.params;
