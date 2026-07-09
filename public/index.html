@@ -1134,6 +1134,7 @@ textarea.run-input.changed {
     <button class="btn" id="redoBtn" onclick="globalRedo()" title="やり直す (Ctrl+Shift+Z)" style="background:#4a5568;color:white;font-size:13px;padding:5px 10px;min-width:36px;">↪</button>
     <button class="btn btn-restore" id="restoreBtn" onclick="restoreBackup()">元に戻す</button>
     <button class="btn" id="pdfBtn" style="background:#2d8c6e;color:white;" onclick="downloadPptx()">📥 パワポをDL</button>
+    <button class="btn" id="replaceBtn" style="background:#6366f1;color:white;display:none;" onclick="openUploadModal(currentWeekId)">🔄 資料を差し替え</button>
     <button class="btn" id="shareBtn" style="background:#d97706;color:white;display:none;" onclick="openShareModal()">🔗 シェア</button>
     <button class="btn btn-save" id="saveBtn" onclick="saveAll()">💾 保存する</button>
   </div>
@@ -3507,6 +3508,11 @@ function applyRoleUI() {
   if (isAdmin) {
     const shareBtn = document.getElementById('shareBtn');
     if (shareBtn) shareBtn.style.display = 'inline-flex';
+  }
+  // editor以上に差し替えボタンを表示
+  if (isAdmin || currentRole === 'editor') {
+    const replaceBtn = document.getElementById('replaceBtn');
+    if (replaceBtn) replaceBtn.style.display = 'inline-flex';
   }
 }
 
